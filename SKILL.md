@@ -2605,4 +2605,2250 @@ pip install fiona>=1.9             # 矢量数据读写
 5. **碰撞必检**: BIM模型生成后务必进行碰撞检测
 6. **输出清晰**: 工程量清单使用表格形式，BIM模型标注构件属性
 
-<!-- 自动生成于 2026-07-12 23:34:40 | 模块数: 9 | 文件大小: 84,424 bytes -->
+## 九、工程造价计价 (Pricing & Cost Estimation)
+
+> 依据: GB 50500-2013《建设工程工程量清单计价规范》、建办标〔2020〕38号
+> 体系: 量价分离 — 工程量由算量模块计算，本模块负责计价
+
+---
+
+### 9.1 费用组成体系
+
+```
+工程造价 = 分部分项工程费 + 措施项目费 + 其他项目费 + 规费 + 税金
+         └─ 人工费 + 材料费 + 机械费 + 管理费 + 利润
+```
+
+| 费用类别 | 编码前缀 | 说明 |
+|---------|---------|------|
+| 分部分项工程费 | 0101~0117 | 按清单编码对应实体项目 |
+| 措施项目费 | 01S | 安全文明施工、夜间施工、二次搬运等 |
+| 其他项目费 | 01Q | 暂列金额、暂估价、计日工、总承包服务费 |
+| 规费 | 01G | 社保、公积金、工程排污费 |
+| 税金 | 01T | 增值税（一般计税9% / 简易计税3%） |
+
+### 9.2 综合单价计算
+
+```
+综合单价 = 人工费 + 材料费 + 机械费 + 管理费 + 利润
+         + 一般风险费（不含规费和税金）
+
+人工费 = ∑(工日消耗量 × 人工单价)
+材料费 = ∑(材料消耗量 × 材料单价)
+机械费 = ∑(机械台班消耗量 × 台班单价)
+管理费 = (人工费 + 机械费) × 管理费费率
+利  润 = (人工费 + 机械费) × 利润率
+```
+
+```python
+def calculate_composite_unit_price(
+    labor_days: float, labor_rate: float,
+    materials: list,  # [(name, consumption, unit_price), ...]
+    machinery: list,  # [(name, shifts, shift_price), ...]
+    mgmt_rate: float = 0.15,
+    profit_rate: float = 0.08,
+    risk_rate: float = 0.02,
+) -> dict:
+    """
+    计算综合单价
+    依据: GB 50500-2013 第3.0.5条
+    """
+    labor_cost = labor_days * labor_rate
+
+    material_cost = sum(consumption * price for _, consumption, price in materials)
+
+    machinery_cost = sum(shifts * price for _, shifts, price in machinery)
+
+    base = labor_cost + machinery_cost
+    management_cost = base * mgmt_rate
+    profit = base * profit_rate
+    risk = base * risk_rate
+
+    unit_price = (labor_cost + material_cost + machinery_cost
+                  + management_cost + profit + risk)
+
+    return {
+        'labor_cost': round(labor_cost, 2),
+        'material_cost': round(material_cost, 2),
+        'machinery_cost': round(machinery_cost, 2),
+        'management_cost': round(management_cost, 2),
+        'profit': round(profit, 2),
+        'risk_cost': round(risk, 2),
+        'composite_unit_price': round(unit_price, 2),
+        'analysis': {
+            '人工费占比': f'{labor_cost/unit_price*100:.1f}%',
+            '材料费占比': f'{material_cost/unit_price*100:.1f}%',
+            '机械费占比': f'{machinery_cost/unit_price*100:.1f}%',
+        }
+    }
+```
+
+### 9.3 人工工日单价参考表
+
+| 工种 | 工日单价(元) | 工种 | 工日单价(元) |
+|------|:---:|------|:---:|
+| 综合工日 | 120~150 | 木工 | 150~200 |
+| 钢筋工 | 150~220 | 混凝土工 | 130~180 |
+| 砌筑工 | 140~190 | 抹灰工 | 130~180 |
+| 架子工 | 160~230 | 电焊工 | 180~280 |
+| 起重工 | 160~240 | 电工 | 160~250 |
+| 管工 | 150~220 | 油漆工 | 130~180 |
+| 防水工 | 140~200 | 信号工 | 130~170 |
+
+> 注: 以上为2024~2026年市场参考价，实际以当地造价信息为准
+
+### 9.4 常用材料单价参考表
+
+| 材料名称 | 规格 | 单位 | 单价(元) |
+|---------|------|------|:---:|
+| 商品混凝土 | C30 | m³ | 420~480 |
+| 商品混凝土 | C35 | m³ | 460~520 |
+| 商品混凝土 | C40 | m³ | 500~560 |
+| 商品混凝土 | C50 | m³ | 560~640 |
+| 水泥 | P.O 42.5 | t | 380~450 |
+| 砂 | 中砂 | m³ | 120~180 |
+| 碎石 | 5-31.5mm | m³ | 130~190 |
+| 热轧带肋钢筋 | HRB400 Φ12-25 | t | 3800~4200 |
+| 热轧光圆钢筋 | HPB300 Φ6-10 | t | 4000~4400 |
+| 钢绞线 | Φ15.2 | t | 5500~6500 |
+| 木模板 | 周转 | m² | 35~50 |
+| 钢模板 | 周转 | kg | 4.5~6.0 |
+| 脚手架钢管 | Φ48×3.5 | t | 3800~4500 |
+| 标准砖 | 240×115×53 | 千块 | 400~550 |
+| 加气混凝土砌块 | B06 A5.0 | m³ | 220~300 |
+| 防水卷材 | SBS 3mm | m² | 25~38 |
+| 沥青混凝土 | AC-13C | t | 550~700 |
+| 水泥稳定碎石 | 5% | m³ | 180~240 |
+
+### 9.5 机械台班单价参考表
+
+| 机械名称 | 规格 | 台班单价(元) |
+|---------|------|:---:|
+| 履带式挖掘机 | 1.0m³ | 1800~2200 |
+| 履带式挖掘机 | 0.6m³ | 1200~1600 |
+| 轮式装载机 | 3.0m³ | 1000~1400 |
+| 自卸汽车 | 15t | 600~900 |
+| 混凝土泵车 | 56m | 2500~3500 |
+| 混凝土搅拌车 | 12m³ | 800~1200 |
+| 塔式起重机 | TC6010 | 1200~1800 |
+| 施工电梯 | SC200/200 | 600~900 |
+| 履带式起重机 | 50t | 2000~3000 |
+| 振动压路机 | 18t | 800~1200 |
+
+### 9.6 措施项目费计算
+
+```python
+def calculate_measure_cost(
+    project_cost: float,
+    project_type: str = 'building',
+    area: float = 0,
+) -> dict:
+    """
+    计算措施项目费
+    依据: GB 50500-2013 第3.0.6条
+    """
+    # 安全文明施工费费率（按总造价百分比）
+    safety_rates = {
+        'building': 0.030,      # 房建 3.0%
+        'municipal': 0.025,     # 市政 2.5%
+        'highway': 0.020,       # 公路 2.0%
+    }
+    safety_rate = safety_rates.get(project_type, 0.025)
+
+    safety_cost = project_cost * safety_rate  # 安全文明施工费
+
+    # 夜间施工增加费
+    night_cost = project_cost * 0.005 if project_type == 'building' else 0
+
+    # 二次搬运费
+    transport_cost = project_cost * 0.008
+
+    # 冬雨季施工增加费
+    seasonal_cost = project_cost * 0.010
+
+    # 大型机械设备进出场及安拆费（按实际计列）
+    equipment_mobilization = 0  # 按实际报价
+
+    # 脚手架费（按建筑面积估算）
+    scaffold_cost = area * 35 if area > 0 else project_cost * 0.015
+
+    # 模板费（按混凝土量估算，一般在混凝土造价的15-25%）
+    formwork_cost = project_cost * 0.020
+
+    total = (safety_cost + night_cost + transport_cost +
+             seasonal_cost + equipment_mobilization +
+             scaffold_cost + formwork_cost)
+
+    return {
+        '安全文明施工费': round(safety_cost, 2),
+        '夜间施工增加费': round(night_cost, 2),
+        '二次搬运费': round(transport_cost, 2),
+        '冬雨季施工增加费': round(seasonal_cost, 2),
+        '大型机械进出场费': round(equipment_mobilization, 2),
+        '脚手架费': round(scaffold_cost, 2),
+        '模板费': round(formwork_cost, 2),
+        '措施费合计': round(total, 2),
+    }
+```
+
+### 9.7 规费与税金计算
+
+```python
+def calculate_regulation_and_tax(
+    sub_project_cost: float,  # 分部分项工程费
+    measure_cost: float,      # 措施项目费
+    other_cost: float = 0,    # 其他项目费
+    tax_method: str = 'general',  # 'general'(一般计税9%) / 'simple'(简易计税3%)
+) -> dict:
+    """
+    计算规费和税金
+    依据: GB 50500-2013 第3.0.7条、财税〔2018〕32号
+    """
+    base = sub_project_cost + measure_cost + other_cost
+
+    # 规费费率
+    regulation_rates = {
+        '社保费': 0.032,       # 养老+医疗+失业+工伤+生育
+        '住房公积金': 0.010,
+        '工程排污费': 0.001,
+    }
+
+    regulation_cost = sum(base * rate for rate in regulation_rates.values())
+
+    # 税前造价
+    pre_tax = base + regulation_cost
+
+    # 增值税率
+    tax_rate = 0.09 if tax_method == 'general' else 0.03
+    tax = pre_tax * tax_rate
+
+    # 总造价
+    total = pre_tax + tax
+
+    return {
+        '规费': {
+            '社保费': round(base * regulation_rates['社保费'], 2),
+            '住房公积金': round(base * regulation_rates['住房公积金'], 2),
+            '工程排污费': round(base * regulation_rates['工程排污费'], 2),
+            '规费合计': round(regulation_cost, 2),
+        },
+        '税金': {
+            '计税方法': '一般计税' if tax_method == 'general' else '简易计税',
+            '税率': f'{tax_rate*100:.0f}%',
+            '税前造价': round(pre_tax, 2),
+            '税金': round(tax, 2),
+        },
+        '工程总造价': round(total, 2),
+    }
+```
+
+### 9.8 工程报价书生成
+
+```python
+def generate_bid_document(
+    quantities: list,  # [(code, name, unit, qty, unit_price), ...]
+    project_info: dict,
+    output_path: str,
+) -> str:
+    """
+    生成完整工程报价书（Excel）
+    包含: 封面、分部分项清单、措施项目清单、规费税金汇总
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+
+    wb = Workbook()
+
+    # === 封面 ===
+    ws_cover = wb.active
+    ws_cover.title = "封面"
+    ws_cover['A1'] = "工程报价书"
+    ws_cover['A1'].font = Font(name='宋体', size=24, bold=True)
+    ws_cover.merge_cells('A1:F1')
+    ws_cover['A3'] = f"工程名称: {project_info.get('name', '')}"
+    ws_cover['A4'] = f"建设单位: {project_info.get('client', '')}"
+    ws_cover['A5'] = f"施工单位: {project_info.get('contractor', '')}"
+    ws_cover['A6'] = f"报价日期: {project_info.get('date', '')}"
+
+    # === 分部分项工程量清单 ===
+    ws_bq = wb.create_sheet("分部分项工程量清单")
+    headers = ['序号', '清单编码', '项目名称', '项目特征', '计量单位',
+               '工程量', '综合单价(元)', '合价(元)', '其中人工费', '备注']
+    for col, h in enumerate(headers, 1):
+        cell = ws_bq.cell(row=1, column=col, value=h)
+        cell.font = Font(name='宋体', bold=True, size=10)
+        cell.fill = PatternFill('solid', start_color='4472C4')
+        cell.font = Font(name='宋体', bold=True, size=10, color='FFFFFF')
+        cell.alignment = Alignment(horizontal='center')
+
+    total_cost = 0
+    for idx, (code, name, unit, qty, price) in enumerate(quantities, 1):
+        subtotal = qty * price
+        total_cost += subtotal
+        row = idx + 1
+        ws_bq.cell(row=row, column=1, value=idx)
+        ws_bq.cell(row=row, column=2, value=code)
+        ws_bq.cell(row=row, column=3, value=name)
+        ws_bq.cell(row=row, column=6, value=unit)
+        ws_bq.cell(row=row, column=7, value=qty)
+        ws_bq.cell(row=row, column=8, value=price)
+        ws_bq.cell(row=row, column=9, value=round(subtotal, 2))
+
+    # 合计行
+    sum_row = len(quantities) + 2
+    ws_bq.cell(row=sum_row, column=3, value="合计").font = Font(bold=True)
+    ws_bq.cell(row=sum_row, column=9, value=round(total_cost, 2)).font = Font(bold=True)
+
+    # === 费用汇总表 ===
+    ws_summary = wb.create_sheet("费用汇总表")
+    measures = calculate_measure_cost(total_cost, project_info.get('type', 'building'),
+                                       project_info.get('area', 0))
+    reg_tax = calculate_regulation_and_tax(total_cost, measures['措施费合计'])
+
+    summary_data = [
+        ['1', '分部分项工程费', round(total_cost, 2)],
+        ['2', '措施项目费', measures['措施费合计']],
+        ['3', '其他项目费', 0],
+        ['4', '规费', reg_tax['规费']['规费合计']],
+        ['5', '税金', reg_tax['税金']['税金']],
+        ['', '工程总造价', reg_tax['工程总造价']],
+    ]
+    for row_idx, (no, name, amount) in enumerate(summary_data, 1):
+        ws_summary.cell(row=row_idx, column=1, value=no)
+        ws_summary.cell(row=row_idx, column=2, value=name)
+        ws_summary.cell(row=row_idx, column=3, value=amount)
+
+    wb.save(output_path)
+    return output_path
+```
+
+### 9.9 材料价差调整
+
+```python
+def calculate_material_price_adjustment(
+    contract_prices: dict,  # {材料名: 合同单价}
+    current_prices: dict,   # {材料名: 当前市场单价}
+    quantities: dict,       # {材料名: 消耗量}
+    adjustment_threshold: float = 0.05,  # ±5%以内不调整
+) -> dict:
+    """
+    材料价差调整
+    依据: 施工合同约定及工程造价信息
+    """
+    adjustments = []
+    total_diff = 0
+
+    for material, contract_price in contract_prices.items():
+        current_price = current_prices.get(material, contract_price)
+        qty = quantities.get(material, 0)
+        diff_pct = (current_price - contract_price) / contract_price
+
+        if abs(diff_pct) > adjustment_threshold:
+            diff_amount = (current_price - contract_price) * qty
+            adjustments.append({
+                '材料名称': material,
+                '合同单价': contract_price,
+                '现行单价': current_price,
+                '价差率': f'{diff_pct*100:.1f}%',
+                '消耗量': qty,
+                '价差金额': round(diff_amount, 2),
+            })
+            total_diff += diff_amount
+
+    return {
+        '调整明细': adjustments,
+        '价差合计': round(total_diff, 2),
+        '调整材料数': len(adjustments),
+    }
+```
+
+---
+
+## 十、施工安全计算 (Construction Safety Calculation)
+
+> 依据: JGJ 130-2011《建筑施工扣件式钢管脚手架安全技术规范》、JGJ 162-2014《建筑施工模板安全技术规范》、JGJ 120-2012《建筑基坑支护技术规程》、JGJ 215-2010《建筑施工升降机安装、使用、拆卸安全技术规程》
+
+---
+
+### 10.1 脚手架计算
+
+#### 10.1.1 落地式钢管脚手架承载力
+
+```
+立杆稳定性验算: N/φA ≤ f
+
+式中:
+  N  — 立杆轴向力设计值 (kN)
+  φ  — 轴心受压构件稳定系数（查长细比λ）
+  A  — 立杆截面面积 (cm²), Φ48×3.5钢管 A=4.89cm²
+  f  — 钢材抗压强度设计值, Q235 f=205 N/mm²
+
+立杆轴向力:
+  N = 1.2×(NG1k + NG2k) + 1.4×ΣNQk
+
+  NG1k — 脚手架结构自重 (kN)
+  NG2k — 构配件自重 (kN)
+  NQk  — 施工荷载 (kN)
+
+长细比: λ = l₀/i
+  l₀ = k×μ×h  (计算长度)
+  i  = 15.78mm (截面回转半径, Φ48×3.5)
+  k  = 1.155 (长度附加系数)
+  μ  = 1.50~1.80 (立杆计算长度系数, 按连墙件布置查表)
+```
+
+```python
+def check_scaffold_stability(
+    height: float,         # 脚手架高度(m)
+    step: float = 1.8,     # 步距(m)
+    span: float = 1.5,     # 立杆纵距(m)
+    layers: int = 2,       # 同时施工层数
+    load_per_layer: float = 3.0,  # 每层施工荷载(kN/m²)
+    wall_type: str = 'two',  # 'two'=两步三跨, 'three'=三步三跨
+) -> dict:
+    """
+    落地式扣件钢管脚手架立杆稳定性验算
+    依据: JGJ 130-2011 第5.1.5~5.1.9条
+    """
+    # 钢管参数 Φ48×3.5
+    A = 489.0        # 截面面积 mm²
+    i = 15.78        # 回转半径 mm
+    f = 205.0        # Q235强度设计值 N/mm²
+    E = 2.06e5       # 弹性模量 N/mm²
+
+    # 计算长度系数
+    mu = 1.50 if wall_type == 'two' else 1.70
+    k = 1.155
+    l0 = k * mu * step * 1000  # mm
+
+    # 长细比及稳定系数
+    lamda = l0 / i
+    # φ值查表近似公式 (JGJ 130 附录C)
+    if lamda <= 135:
+        phi = (1 + 0.001 * lamda**2) ** -1 * (1 - 0.001 * lamda**2) / (
+            (1 + 0.001 * lamda**2) ** 2 + 0.0001 * lamda**2)
+        # 简化: 使用查表近似
+        phi_table = {60: 0.842, 70: 0.809, 80: 0.771, 90: 0.730,
+                     100: 0.688, 110: 0.645, 120: 0.604, 130: 0.565, 135: 0.546}
+        # 线性插值
+        keys = sorted(phi_table.keys())
+        for j in range(len(keys)-1):
+            if keys[j] <= lamda <= keys[j+1]:
+                t = (lamda - keys[j]) / (keys[j+1] - keys[j])
+                phi = phi_table[keys[j]] * (1-t) + phi_table[keys[j+1]] * t
+                break
+        else:
+            phi = 0.546
+    else:
+        phi = 7240 / lamda**2  # b类截面
+
+    # 荷载计算
+    # 1. 结构自重: 钢管+扣件, 约0.1337 kN/m(纵距1.5m, 步距1.8m)
+    gk1 = 0.1337 * height / step  # 每根立杆结构自重 kN
+    # 2. 构配件自重: 脚手板+挡脚板+安全网
+    gk2 = (0.35 * span * step * (height / step / 2)  # 脚手板(隔步铺设)
+           + 0.14 * span * (height / step)            # 挡脚板
+           + 0.01 * span * height)                    # 安全网
+    # 3. 施工荷载
+    nqk = load_per_layer * span * step * layers  # kN
+
+    # 立杆轴向力设计值
+    NGk = gk1 + gk2
+    N = 1.2 * NGk + 1.4 * nqk  # kN
+
+    # 稳定性验算
+    sigma = N * 1000 / (phi * A)  # N/mm²
+    safe = sigma <= f
+    ratio = sigma / f
+
+    return {
+        '长细比λ': round(lamda, 1),
+        '稳定系数φ': round(phi, 4),
+        '计算长度l0': f'{l0:.0f} mm',
+        '结构自重NG1k': f'{gk1:.2f} kN',
+        '构配件自重NG2k': f'{gk2:.2f} kN',
+        '施工荷载NQk': f'{nqk:.2f} kN',
+        '立杆轴向力N': f'{N:.2f} kN',
+        '截面应力σ': f'{sigma:.1f} N/mm²',
+        '强度设计值f': f'{f} N/mm²',
+        '应力比σ/f': f'{ratio:.3f}',
+        '是否安全': '✓ 满足' if safe else '✗ 不满足，需调整',
+        '建议': '' if safe else '减小步距/纵距/施工层数，或增设抛撑',
+    }
+```
+
+#### 10.1.2 脚手架连墙件计算
+
+```python
+def check_wall_connector(
+    wind_pressure: float,   # 风压标准值 kN/m²
+    span: float = 1.5,      # 立杆纵距 m
+    vertical_step: float = 3.6,  # 连墙件竖向间距 m(两步)
+    horizontal_step: float = 4.5,  # 连墙件水平间距 m(三跨)
+) -> dict:
+    """
+    连墙件抗风验算
+    依据: JGJ 130-2011 第5.1.12条
+    """
+    # 连墙件轴向力设计值
+    Nl = 1.4 * wind_pressure * vertical_step * horizontal_step + 3.0  # kN, +3.0为自重
+
+    # 扣件抗滑承载力
+    Rc = 8.0  # 单扣件 8kN, 双扣件 12kN
+
+    safe = Nl <= Rc
+    return {
+        '风荷载标准值': f'{wind_pressure} kN/m²',
+        '连墙件轴向力Nl': f'{Nl:.2f} kN',
+        '扣件抗滑力Rc': f'{Rc} kN',
+        '是否安全': '✓ 满足' if safe else '✗ 不满足，需用双扣件',
+        '建议': '' if safe else '采用双扣件连接(Rc=12kN)',
+    }
+```
+
+### 10.2 模板支撑体系计算
+
+```python
+def check_formwork_support(
+    slab_thickness: float,    # 板厚 mm
+    concrete_unit_weight: float = 25.0,  # 钢筋混凝土容重 kN/m³
+    span: float = 1.2,        # 立杆纵距 m
+    step: float = 1.2,        # 步距 m
+    construction_load: float = 2.5,  # 施工荷载 kN/m²
+    wall_type: str = 'two',   # 连墙件类型
+) -> dict:
+    """
+    模板支撑架立杆稳定性验算
+    依据: JGJ 162-2014 第6.2.4条、JGJ 130-2011
+    """
+    # 钢管参数
+    A = 489.0  # mm²
+    i = 15.78  # mm
+    f = 205.0  # N/mm²
+
+    # 荷载计算
+    # 1. 模板及支撑架自重: 约0.75 kN/m²
+    g1 = 0.75
+    # 2. 新浇混凝土自重
+    g2 = slab_thickness / 1000 * concrete_unit_weight  # kN/m²
+    # 3. 钢筋自重: 约1.1 kN/m³ × 板厚
+    g3 = 1.1 * slab_thickness / 1000
+    # 4. 施工人员及设备荷载
+    q1 = construction_load
+
+    # 立杆轴向力
+    N_k = (g1 + g2 + g3 + q1) * span * span  # 标准值 kN
+    N = 1.2 * (g1 + g2 + g3) * span * span + 1.4 * q1 * span * span  # 设计值 kN
+
+    # 稳定系数
+    mu = 1.50 if wall_type == 'two' else 1.70
+    k = 1.155
+    l0 = k * mu * step * 1000  # mm
+    lamda = l0 / i
+
+    # φ值近似
+    if lamda <= 120:
+        phi_approx = max(0.6 - (lamda - 100) * 0.004, 0.45)
+    else:
+        phi_approx = max(0.45 - (lamda - 120) * 0.003, 0.30)
+
+    sigma = N * 1000 / (phi_approx * A)
+    safe = sigma <= f
+
+    return {
+        '板厚': f'{slab_thickness} mm',
+        '混凝土自重': f'{g2:.2f} kN/m²',
+        '总恒载': f'{g1+g2+g3:.2f} kN/m²',
+        '施工荷载': f'{q1} kN/m²',
+        '立杆轴向力(标准值)': f'{N_k:.2f} kN',
+        '立杆轴向力(设计值)': f'{N:.2f} kN',
+        '长细比λ': round(lamda, 1),
+        '稳定系数φ': round(phi_approx, 4),
+        '截面应力σ': f'{sigma:.1f} N/mm²',
+        '应力比σ/f': f'{sigma/f:.3f}',
+        '是否安全': '✓ 满足' if safe else '✗ 不满足',
+        '建议': '' if safe else '减小立杆间距或步距，增加剪刀撑',
+    }
+```
+
+### 10.3 深基坑支护计算
+
+```python
+def check_deep_excavation(
+    excavation_depth: float,  # 开挖深度 m
+    soil_gamma: float = 18.0,  # 土体重度 kN/m³
+    soil_phi: float = 20.0,    # 内摩擦角 °
+    soil_c: float = 15.0,      # 内聚力 kPa
+    surcharge: float = 20.0,   # 地面超载 kPa
+    water_table: float = None,  # 地下水位深度 m
+) -> dict:
+    """
+    深基坑支护初步计算
+    依据: JGJ 120-2012《建筑基坑支护技术规程》
+    包含: 主动土压力、被动土压力、嵌固深度验算
+    """
+    import math
+
+    # 主动土压力系数 (Rankine)
+    Ka = math.tan(math.radians(45 - soil_phi/2))**2
+    # 被动土压力系数
+    Kp = math.tan(math.radians(45 + soil_phi/2))**2
+
+    # 主动土压力 (坑底处)
+    pa_bottom = soil_gamma * excavation_depth * Ka - 2 * soil_c * math.sqrt(Ka)
+    pa_bottom = max(pa_bottom, 0)  # 不出现负值
+
+    # 考虑地面超载
+    pa_surcharge = surcharge * Ka
+
+    # 总主动土压力(三角形分布)
+    Pa = 0.5 * soil_gamma * excavation_depth**2 * Ka \
+         - 2 * soil_c * math.sqrt(Ka) * excavation_depth \
+         + surcharge * Ka * excavation_depth
+    Pa = max(Pa, 0)
+
+    # 嵌固深度计算（悬臂式支护）
+    # 经验值: 嵌固深度 = 0.3~1.2 × 开挖深度
+    # 简化计算: 力矩平衡法
+    embed_ratio = 0.8  # 初始估计
+    for _ in range(20):
+        d = excavation_depth * embed_ratio
+        # 被动土压力
+        Pp = 0.5 * soil_gamma * d**2 * Kp + 2 * soil_c * math.sqrt(Kp) * d
+        # 力矩平衡(简化): Pa×(H/3) ≤ Pp×(d/3)
+        moment_active = Pa * (excavation_depth / 3)
+        moment_passive = Pp * (d / 3)
+        if moment_passive >= 1.2 * moment_active:  # 安全系数1.2
+            break
+        embed_ratio += 0.05
+
+    embed_depth = excavation_depth * embed_ratio
+    total_length = excavation_depth + embed_depth
+
+    # 判定基坑等级
+    if excavation_depth >= 12:
+        grade = '一级'
+    elif excavation_depth >= 7:
+        grade = '二级'
+    else:
+        grade = '三级'
+
+    return {
+        '基坑等级': grade,
+        '开挖深度': f'{excavation_depth} m',
+        '主动土压力系数Ka': round(Ka, 4),
+        '被动土压力系数Kp': round(Kp, 4),
+        '坑底主动土压力': f'{pa_bottom:.1f} kPa',
+        '超载侧压力': f'{pa_surcharge:.1f} kPa',
+        '总主动土压力Pa': f'{Pa:.1f} kN/m',
+        '最小嵌固深度': f'{embed_depth:.1f} m',
+        '桩/墙总长度': f'{total_length:.1f} m',
+        '嵌固比d/H': f'{embed_ratio:.2f}',
+        '安全系数': '1.2 (力矩平衡)',
+        '建议支护形式': _recommend_support(excavation_depth, grade),
+    }
+
+def _recommend_support(depth: float, grade: str) -> str:
+    """根据深度和等级推荐支护形式"""
+    if depth <= 3:
+        return '放坡开挖 / 土钉墙'
+    elif depth <= 6:
+        return '土钉墙 / 水泥土桩'
+    elif depth <= 10:
+        return '排桩+内支撑 / 地下连续墙'
+    elif depth <= 15:
+        return '地下连续墙+混凝土内支撑 / 排桩+锚索'
+    else:
+        return '地下连续墙+多道混凝土内支撑 / SMW工法'
+```
+
+### 10.4 塔吊基础计算
+
+```python
+def check_tower_crane_foundation(
+    crane_model: str,           # 塔吊型号
+    tipping_moment: float,      # 倾覆力矩 kN·m
+    vertical_load: float,       # 垂直力 kN
+    base_size: float = 5.0,     # 基础边长 m
+    base_height: float = 1.2,   # 基础高度 m
+    soil_bearing: float = 180,  # 地基承载力特征值 kPa
+) -> dict:
+    """
+    塔吊板式基础验算
+    依据: JGJ/T 30122-2014《塔式起重机混凝土基础工程技术规程》
+    """
+    import math
+
+    # 基础自重
+    concrete_gamma = 25.0  # kN/m³
+    base_weight = base_size * base_size * base_height * concrete_gamma
+
+    # 总垂直力
+    N = vertical_load + base_weight
+
+    # 偏心距
+    e = tipping_moment / N
+
+    # 基础底面抵抗矩
+    W = base_size * base_size**2 / 6
+
+    # 基底应力（梯形或三角形分布）
+    p_max = N / (base_size * base_size) + tipping_moment / W
+    p_min = N / (base_size * base_size) - tipping_moment / W
+
+    # 地基承载力验算
+    # 修正后地基承载力 (深宽修正)
+    f_a = soil_bearing + 1.0 * 18 * (base_height - 0.5)  # 简化修正
+
+    safe_bearing = p_max <= 1.2 * f_a
+    safe_eccentricity = e <= base_size / 6  # 不脱离
+
+    # 抗倾覆验算
+    overturn_resist = base_weight * base_size / 2
+    overturn_factor = overturn_resist / tipping_moment
+    safe_overturn = overturn_factor >= 1.5
+
+    return {
+        '塔吊型号': crane_model,
+        '倾覆力矩': f'{tipping_moment} kN·m',
+        '垂直力': f'{vertical_load} kN',
+        '基础尺寸': f'{base_size}×{base_size}×{base_height} m',
+        '基础自重': f'{base_weight:.1f} kN',
+        '总垂直力': f'{N:.1f} kN',
+        '偏心距e': f'{e:.3f} m',
+        '基底最大应力pmax': f'{p_max:.1f} kPa',
+        '基底最小应力pmin': f'{p_min:.1f} kPa',
+        '修正地基承载力fa': f'{f_a:.0f} kPa',
+        '抗倾覆安全系数': f'{overturn_factor:.2f}',
+        '地基承载力验算': '✓ 满足' if safe_bearing else '✗ 不满足',
+        '偏心距验算': '✓ 满足' if safe_eccentricity else '✗ 不满足(有拉应力)',
+        '抗倾覆验算': '✓ 满足' if safe_overturn else '✗ 不满足',
+        '综合判断': '✓ 安全' if all([safe_bearing, safe_eccentricity, safe_overturn]) else '✗ 需修改',
+    }
+```
+
+### 10.5 高处作业临边洞口防护计算
+
+```python
+def check_edge_protection(
+    floor_height: float,        # 楼层高度 m
+    slab_thickness: float,      # 板厚 mm
+    wind_pressure: float = 0.5, # 基本风压 kN/m²
+) -> dict:
+    """
+    临边防护栏杆计算
+    依据: JGJ 80-2016《建筑施工高处作业安全技术规范》
+    """
+    # 防护栏杆荷载
+    # 水平荷载: 1kN/m (防护栏杆顶部)
+    horizontal_load = 1.0  # kN/m
+
+    # 钢管参数 Φ48×3.5
+    A = 489.0  # mm²
+    W = 5.08e3  # 截面抵抗矩 mm³
+    f = 205.0  # N/mm²
+
+    # 立杆间距2m，栏杆高1.2m
+    post_spacing = 2.0  # m
+    rail_height = 1.2   # m
+
+    # 立杆弯矩
+    M = horizontal_load * post_spacing * rail_height * 1000  # N·m
+
+    # 立杆应力
+    sigma = M * 1000 / W  # N/mm²
+
+    # 风荷载影响
+    wind_force = wind_pressure * post_spacing * rail_height  # kN
+    wind_moment = wind_force * rail_height / 2 * 1000  # N·m
+    sigma_wind = wind_moment * 1000 / W
+
+    total_sigma = sigma + sigma_wind
+    safe = total_sigma <= f
+
+    return {
+        '楼层高度': f'{floor_height} m',
+        '栏杆高度': f'{rail_height} m',
+        '立杆间距': f'{post_spacing} m',
+        '水平荷载': f'{horizontal_load} kN/m',
+        '风荷载': f'{wind_force:.2f} kN',
+        '立杆弯矩': f'{M:.1f} N·m',
+        '截面应力σ': f'{total_sigma:.1f} N/mm²',
+        '应力比': f'{total_sigma/f:.3f}',
+        '是否安全': '✓ 满足' if safe else '✗ 不满足，减小立杆间距',
+    }
+```
+
+### 10.6 临时用电安全计算
+
+```python
+def check_temporary_power(
+    total_power: float,       # 总用电功率 kW
+    voltage: int = 380,       # 电压 V
+    power_factor: float = 0.8, # 功率因数
+    cable_length: float = 100, # 电缆长度 m
+    conductor: str = 'copper', # 'copper'/'aluminum'
+) -> dict:
+    """
+    施工现场临时用电计算
+    依据: JGJ 46-2024《施工现场临时用电安全技术规范》
+    """
+    # 计算电流
+    import math
+    I = total_power * 1000 / (math.sqrt(3) * voltage * power_factor)
+
+    # 铜电缆经济电流密度 (A/mm²)
+    j_economical = 4.0 if conductor == 'copper' else 2.5
+
+    # 计算截面
+    cross_section = I / j_economical
+
+    # 标准截面选型
+    standard_sections = [2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240]
+    selected_section = next((s for s in standard_sections if s >= cross_section), 240)
+
+    # 电压降验算 (ΔU% ≤ 5%)
+    # ΔU% = (P×L) / (C×S)
+    C = 77 if conductor == 'copper' else 46.3  # 铜C=77, 铝C=46.3
+    delta_u = (total_power * cable_length) / (C * selected_section)
+    safe_voltage = delta_u <= 5.0
+
+    # 需要系数法计算变压器容量
+    Kx = 0.7  # 需要系数
+    S_transformer = Kx * total_power / power_factor
+
+    return {
+        '总功率': f'{total_power} kW',
+        '计算电流': f'{I:.1f} A',
+        '经济截面': f'{cross_section:.1f} mm²',
+        '选择截面': f'{selected_section} mm²',
+        '电压降': f'{delta_u:.2f}%',
+        '电压降限值': '5%',
+        '变压器容量': f'{S_transformer:.1f} kVA',
+        '建议变压器': f'{math.ceil(S_transformer/50)*50} kVA',
+        '电压降验算': '✓ 满足' if safe_voltage else '✗ 不满足，增大截面',
+    }
+```
+
+---
+
+## 十一、碳排放与绿色建筑 (Carbon Emission & Green Building)
+
+> 依据: GB/T 51366-2019《建筑碳排放计算标准》、GB/T 50378-2019《绿色建筑评价标准》、GB/T 51231-2016《装配式混凝土建筑技术标准》
+
+---
+
+### 11.1 建筑碳排放计算
+
+#### 11.1.1 碳排放阶段划分
+
+```
+建筑全寿命期碳排放 = 建材生产碳排放 + 运输碳排放 + 建造碳排放
+                    + 运行碳排放 + 拆除碳排放
+
+CE = CE_prod + CE_trans + CE_cons + CE_oper + CE_demo
+```
+
+| 阶段 | 计算边界 | 占比(典型) |
+|------|---------|:---:|
+| 建材生产 | 原料开采→产品出厂 | 50~70% |
+| 运输 | 工厂→施工现场 | 2~5% |
+| 建造施工 | 施工过程能源消耗 | 3~8% |
+| 运行使用 | 采暖/空调/照明/电梯/给排水 | 15~35% |
+| 拆除处置 | 拆除+废弃物处理 | 1~3% |
+
+#### 11.1.2 建材碳排放因子表
+
+| 材料名称 | 单位 | 碳排放因子(kgCO₂e) | 数据来源 |
+|---------|------|:---:|---------|
+| 硅酸盐水泥(P.O 42.5) | t | 735 | GB/T 51366 附录A |
+| 矿渣水泥(P.S 32.5) | t | 590 | GB/T 51366 附录A |
+| 商品混凝土 C30 | m³ | 295 | 地方碳排放因子 |
+| 商品混凝土 C40 | m³ | 340 | 地方碳排放因子 |
+| 商品混凝土 C50 | m³ | 380 | 地方碳排放因子 |
+| 热轧带肋钢筋 | t | 2120 | GB/T 51366 附录A |
+| 热轧型钢 | t | 1980 | GB/T 51366 附录A |
+| 钢板 | t | 2350 | GB/T 51366 附录A |
+| 铝合金型材 | t | 11200 | GB/T 51366 附录A |
+| 平板玻璃(5mm) | m² | 14.6 | GB/T 51366 附录A |
+| 中空玻璃 | m² | 25.5 | 行业数据 |
+| 烧结普通砖 | 千块 | 198 | GB/T 51366 附录A |
+| 加气混凝土砌块 | m³ | 79 | GB/T 51366 附录A |
+| SBS防水卷材 | m² | 4.2 | 行业数据 |
+| 聚苯板(EPS) | m³ | 165 | 行业数据 |
+| 挤塑板(XPS) | m³ | 195 | 行业数据 |
+| 木材(原木) | m³ | 12.2 | GB/T 51366 附录A |
+| 碎石 | t | 3.5 | 行业数据 |
+| 中砂 | t | 2.8 | 行业数据 |
+| 沥青混凝土 | t | 65 | 行业数据 |
+| 陶瓷墙地砖 | m² | 7.8 | GB/T 51366 附录A |
+
+#### 11.1.3 运输碳排放因子
+
+| 运输方式 | 碳排放因子(kgCO₂e/t·km) | 适用场景 |
+|---------|:---:|---------|
+| 公路运输(柴油重卡) | 0.052 | 短途(<200km) |
+| 公路运输(天然气) | 0.045 | 短途(<200km) |
+| 铁路运输 | 0.010 | 中长途 |
+| 水路运输 | 0.006 | 长途沿江沿海 |
+
+#### 11.1.4 施工能源碳排放因子
+
+| 能源类型 | 单位 | 碳排放因子(kgCO₂e) |
+|---------|------|:---:|
+| 电力(华东电网) | kWh | 0.7035 |
+| 电力(华北电网) | kWh | 0.8843 |
+| 电力(全国平均) | kWh | 0.5810 |
+| 柴油 | kg | 3.0959 |
+| 汽油 | kg | 2.9251 |
+| 天然气 | m³ | 2.1622 |
+| 液化石油气 | kg | 3.1013 |
+
+```python
+def calculate_building_carbon_emission(
+    materials: dict,      # {材料名: 消耗量}
+    transport_distance: float = 50,  # 平均运输距离 km
+    transport_mode: str = 'truck_diesel',
+    electricity_kwh: float = 0,  # 施工用电 kWh
+    diesel_kg: float = 0,        # 施工柴油 kg
+    project_type: str = 'building',
+    grid_region: str = 'national',
+) -> dict:
+    """
+    建筑施工阶段碳排放计算
+    依据: GB/T 51366-2019《建筑碳排放计算标准》
+    """
+    # 建材碳排放因子数据库
+    material_factors = {
+        '水泥_P.O42.5': 735, '水泥_P.S32.5': 590,
+        '混凝土_C25': 265, '混凝土_C30': 295, '混凝土_C35': 320,
+        '混凝土_C40': 340, '混凝土_C45': 360, '混凝土_C50': 380,
+        '钢筋_HRB400': 2120, '钢筋_HPB300': 2120,
+        '型钢': 1980, '钢板': 2350, '铝合金': 11200,
+        '平板玻璃': 14.6, '中空玻璃': 25.5,
+        '普通砖': 0.198, '加气块': 79,
+        'SBS卷材': 4.2, 'EPS板': 165, 'XPS板': 195,
+        '木材': 12.2, '碎石': 3.5, '砂': 2.8,
+        '沥青混凝土': 65, '瓷砖': 7.8,
+    }
+
+    # 运输因子
+    transport_factors = {
+        'truck_diesel': 0.052, 'truck_gas': 0.045,
+        'railway': 0.010, 'waterway': 0.006,
+    }
+    tf = transport_factors.get(transport_mode, 0.052)
+
+    # 电力因子
+    grid_factors = {
+        'national': 0.5810, 'east': 0.7035, 'north': 0.8843,
+        'south': 0.5271, 'central': 0.5737, 'northeast': 0.6214,
+        'northwest': 0.6016,
+    }
+    ef = grid_factors.get(grid_region, 0.5810)
+
+    # 1. 建材生产碳排放
+    ce_prod = 0
+    material_detail = []
+    for mat, qty in materials.items():
+        factor = material_factors.get(mat, 0)
+        carbon = qty * factor
+        ce_prod += carbon
+        material_detail.append({
+            '材料': mat,
+            '消耗量': qty,
+            '因子': factor,
+            '碳排放(kgCO₂e)': round(carbon, 1),
+        })
+
+    # 2. 运输碳排放
+    total_weight = sum(materials.get(k, 0) for k in materials)
+    # 估算材料总重量(简化: 按主要材料重量)
+    weight_estimate = 0
+    weight_map = {'水泥_P.O42.5': 1, '水泥_P.S32.5': 1, '混凝土_C30': 2.4,
+                  '钢筋_HRB400': 7.85, '普通砖': 1.7, '加气块': 0.6}
+    for mat, qty in materials.items():
+        density = weight_map.get(mat, 1.0)
+        weight_estimate += qty * density
+
+    ce_trans = weight_estimate * transport_distance * tf
+
+    # 3. 施工碳排放
+    ce_cons_elec = electricity_kwh * ef
+    ce_cons_diesel = diesel_kg * 3.0959
+    ce_cons = ce_cons_elec + ce_cons_diesel
+
+    # 合计
+    ce_total = ce_prod + ce_trans + ce_cons
+
+    return {
+        '建材生产碳排放': {
+            '碳排放(kgCO₂e)': round(ce_prod, 1),
+            '碳排放(tCO₂e)': round(ce_prod / 1000, 2),
+            '占比': f'{ce_prod/ce_total*100:.1f}%',
+            '明细': material_detail[:10],  # 前十项
+        },
+        '运输碳排放': {
+            '碳排放(kgCO₂e)': round(ce_trans, 1),
+            '碳排放(tCO₂e)': round(ce_trans / 1000, 2),
+            '占比': f'{ce_trans/ce_total*100:.1f}%',
+            '运输距离': f'{transport_distance} km',
+        },
+        '施工碳排放': {
+            '碳排放(kgCO₂e)': round(ce_cons, 1),
+            '碳排放(tCO₂e)': round(ce_cons / 1000, 2),
+            '占比': f'{ce_cons/ce_total*100:.1f}%',
+            '用电碳排放': round(ce_cons_elec, 1),
+            '柴油碳排放': round(ce_cons_diesel, 1),
+        },
+        '施工阶段碳排放合计': {
+            'kgCO₂e': round(ce_total, 1),
+            'tCO₂e': round(ce_total / 1000, 2),
+        },
+    }
+```
+
+### 11.2 装配式建筑装配率计算
+
+```python
+def calculate_assembly_rate(
+    prefabricated_elements: dict,  # 预制构件信息
+    total_elements: dict,          # 全部构件信息
+    project_area: float = 0,       # 建筑面积 m²
+) -> dict:
+    """
+    装配率计算
+    依据: GB/T 51231-2016、各省装配式建筑评价标准
+    装配率 = 预制构件体积 / 全部构件体积 × 100% (承重构件)
+    或: 装配率 = Q/(100-Qw) × 100% (综合评价法)
+    """
+    # 承重构件装配率
+    pre_columns = prefabricated_elements.get('columns', 0)
+    total_columns = total_elements.get('columns', 1)
+    pre_beams = prefabricated_elements.get('beams', 0)
+    total_beams = total_elements.get('beams', 1)
+    pre_walls = prefabricated_elements.get('walls', 0)
+    total_walls = total_elements.get('walls', 1)
+    pre_slabs = prefabricated_elements.get('slabs', 0)
+    total_slabs = total_elements.get('slabs', 1)
+
+    # 各构件装配率
+    rate_columns = pre_columns / total_columns if total_columns > 0 else 0
+    rate_beams = pre_beams / total_beams if total_beams > 0 else 0
+    rate_walls = pre_walls / total_walls if total_walls > 0 else 0
+    rate_slabs = pre_slabs / total_slabs if total_slabs > 0 else 0
+
+    # 综合装配率 (权重法)
+    # 柱20% + 梁20% + 墙30% + 板20% + 非承重墙10%
+    weights = {'columns': 0.20, 'beams': 0.20, 'walls': 0.30, 'slabs': 0.20}
+    assembly_rate = (rate_columns * weights['columns'] +
+                     rate_beams * weights['beams'] +
+                     rate_walls * weights['walls'] +
+                     rate_slabs * weights['slabs']) * 100
+
+    # 装配率分级
+    if assembly_rate >= 76:
+        grade = 'AAA级 (装配率≥76%)'
+    elif assembly_rate >= 66:
+        grade = 'AA级 (装配率≥66%)'
+    elif assembly_rate >= 50:
+        grade = 'A级 (装配率≥50%)'
+    elif assembly_rate >= 30:
+        grade = 'B级 (装配率≥30%)'
+    else:
+        grade = '不达标 (装配率<30%)'
+
+    return {
+        '柱装配率': f'{rate_columns*100:.1f}%',
+        '梁装配率': f'{rate_beams*100:.1f}%',
+        '墙装配率': f'{rate_walls*100:.1f}%',
+        '板装配率': f'{rate_slabs*100:.1f}%',
+        '综合装配率': f'{assembly_rate:.1f}%',
+        '装配等级': grade,
+        '评价建筑面积': f'{project_area} m²' if project_area else '未提供',
+    }
+```
+
+### 11.3 绿色建筑评价
+
+```python
+def evaluate_green_building(
+    project_info: dict,
+    scores: dict,  # 各评价项得分
+) -> dict:
+    """
+    绿色建筑评价
+    依据: GB/T 50378-2019《绿色建筑评价标准》
+    评价指标: 安全耐久+健康舒适+生活便利+资源节约+环境宜居
+    """
+    # 五大指标满分均为100分
+    categories = {
+        '安全耐久': {'max': 100, 'min_pass': 60},
+        '健康舒适': {'max': 100, 'min_pass': 60},
+        '生活便利': {'max': 100, 'min_pass': 60},
+        '资源节约': {'max': 100, 'min_pass': 60},
+        '环境宜居': {'max': 100, 'min_pass': 60},
+    }
+
+    # 加分项(提高与创新)满分100分
+    bonus_max = 100
+
+    # 计算总得分
+    total = 0
+    detail = {}
+    all_pass = True
+
+    for cat, info in categories.items():
+        score = scores.get(cat, 0)
+        passed = score >= info['min_pass']
+        if not passed:
+            all_pass = False
+        detail[cat] = {
+            '得分': score,
+            '满分': info['max'],
+            '得分率': f'{score/info["max"]*100:.0f}%',
+            '是否达标': '✓' if passed else '✗',
+        }
+        total += score
+
+    bonus = scores.get('提高与创新', 0)
+    total_with_bonus = total + bonus
+
+    # 星级判定
+    # 一星级: 总分≥60且各指标≥60
+    # 二星级: 总分≥70且各指标≥60
+    # 三星级: 总分≥85且各指标≥60
+    if all_pass and total_with_bonus >= 85:
+        star_level = '三星级'
+    elif all_pass and total_with_bonus >= 70:
+        star_level = '二星级'
+    elif all_pass and total_with_bonus >= 60:
+        star_level = '一星级'
+    else:
+        star_level = '不达标'
+
+    return {
+        '项目名称': project_info.get('name', ''),
+        '评价指标': detail,
+        '加分项得分': bonus,
+        '总得分': round(total_with_bonus, 1),
+        '绿色建筑等级': star_level,
+        '是否全部达标': '✓ 是' if all_pass else '✗ 否，有指标不达标',
+        '评价依据': 'GB/T 50378-2019',
+    }
+```
+
+### 11.4 建筑能耗计算
+
+```python
+def calculate_building_energy(
+    area: float,               # 建筑面积 m²
+    climate_zone: str = 'hot_summer_cold_winter',  # 气候区
+    building_type: str = 'residential',  # 'residential'/'office'/'commercial'
+    heating_days: int = 90,    # 采暖天数
+    cooling_days: int = 120,   # 空调天数
+    u_walls: float = 0.6,      # 外墙传热系数 W/(m²·K)
+    u_roof: float = 0.5,       # 屋面传热系数 W/(m²·K)
+    u_windows: float = 2.5,    # 外窗传热系数 W/(m²·K)
+    window_wall_ratio: float = 0.3,  # 窗墙比
+    ac_cop: float = 3.5,       # 空调能效比
+) -> dict:
+    """
+    建筑运行能耗计算
+    依据: GB 50189-2015《公共建筑节能设计标准》、JGJ 26-2018《严寒和寒冷地区居住建筑节能设计标准》
+    """
+    # 采暖度日数和空调度日数
+    hdd_map = {
+        'severe_cold': 5000, 'cold': 3000,
+        'hot_summer_cold_winter': 1500,
+        'hot_summer_warm_winter': 300,
+    }
+    cdd_map = {
+        'severe_cold': 50, 'cold': 150,
+        'hot_summer_cold_winter': 300,
+        'hot_summer_warm_winter': 600,
+    }
+
+    hdd = hdd_map.get(climate_zone, 1500)
+    cdd = cdd_map.get(climate_zone, 300)
+
+    # 体形系数估算
+    form_factor = 0.3  # 简化
+
+    # 采暖能耗 (简化计算)
+    # Q_heat = 24×HDD×(U_wall×A_wall + U_roof×A_roof + U_win×A_win) / η / AC_COP
+    wall_area = area * 0.4 * 4  # 估算外墙面积 (层高3m, 4面)
+    roof_area = area * 0.1
+    window_area = wall_area * window_wall_ratio
+    wall_net = wall_area * (1 - window_wall_ratio)
+
+    # 采暖热负荷
+    heat_load = (u_walls * wall_net + u_roof * roof_area + u_windows * window_area) * 24 * hdd / 1000
+    # 采暖能耗(kWh)
+    heating_efficiency = 0.90  # 采暖系统效率
+    energy_heating = heat_load / heating_efficiency
+
+    # 空调能耗
+    cool_load = (u_walls * wall_net + u_roof * roof_area + u_windows * window_area) * 24 * cdd / 1000
+    energy_cooling = cool_load / ac_cop
+
+    # 照明能耗 (按面积和天数估算)
+    lighting_power_density = 5.0 if building_type == 'residential' else 9.0  # W/m²
+    lighting_hours = 4 * 365
+    energy_lighting = lighting_power_density * area * lighting_hours / 1000
+
+    # 设备/插座能耗
+    equipment_power = 3.0 if building_type == 'residential' else 15.0  # W/m²
+    equipment_hours = 6 * 365
+    energy_equipment = equipment_power * area * equipment_hours / 1000
+
+    # 总能耗
+    total_energy = energy_heating + energy_cooling + energy_lighting + energy_equipment
+    energy_per_area = total_energy / area if area > 0 else 0
+
+    # 碳排放 (运行阶段年碳排放)
+    electricity_factor = 0.581  # kgCO₂e/kWh
+    annual_carbon = total_energy * electricity_factor
+
+    return {
+        '气候区': climate_zone,
+        '建筑面积': f'{area} m²',
+        '采暖度日数HDD': hdd,
+        '空调度日数CDD': cdd,
+        '外墙传热系数': f'{u_walls} W/(m²·K)',
+        '屋面传热系数': f'{u_roof} W/(m²·K)',
+        '外窗传热系数': f'{u_windows} W/(m²·K)',
+        '窗墙比': f'{window_wall_ratio}',
+        '采暖能耗': f'{energy_heating:.0f} kWh/年',
+        '空调能耗': f'{energy_cooling:.0f} kWh/年',
+        '照明能耗': f'{energy_lighting:.0f} kWh/年',
+        '设备能耗': f'{energy_equipment:.0f} kWh/年',
+        '总能耗': f'{total_energy:.0f} kWh/年',
+        '单位面积能耗': f'{energy_per_area:.1f} kWh/(m²·年)',
+        '年运行碳排放': f'{annual_carbon:.0f} kgCO₂e ({annual_carbon/1000:.1f} tCO₂e)',
+        '节能评价': _evaluate_energy_saving(energy_per_area, building_type),
+    }
+
+def _evaluate_energy_saving(energy_per_area: float, building_type: str) -> str:
+    """节能评价"""
+    thresholds = {
+        'residential': [20, 30, 40],     # 优/良/一般/差
+        'office': [40, 60, 80],
+        'commercial': [50, 75, 100],
+    }
+    t = thresholds.get(building_type, [30, 50, 70])
+    if energy_per_area <= t[0]:
+        return '优 (超低能耗建筑水平)'
+    elif energy_per_area <= t[1]:
+        return '良 (节能建筑)'
+    elif energy_per_area <= t[2]:
+        return '一般 (满足节能标准)'
+    else:
+        return '差 (不满足节能要求)'
+```
+
+---
+
+## 十二、施工组织与进度计划 (Construction Schedule & CPM)
+
+> 依据: GB/T 50502-2009《建筑施工组织设计规范》、JGJ/T 132-2009《居住建筑节能检测标准》
+> 方法: 网络计划技术(CPM/PERT)、横道图、资源动态曲线
+
+---
+
+### 12.1 双代号网络计划
+
+```python
+def build_cpm_network(tasks: list) -> dict:
+    """
+    双代号网络计划计算（关键路径法 CPM）
+    tasks: [(task_id, name, duration_days, predecessors: list), ...]
+    返回: 各任务最早开始/最早完成/最迟开始/最迟完成/总时差/自由时差 + 关键路径
+    """
+    # 构建任务字典
+    task_map = {}
+    for tid, name, duration, preds in tasks:
+        task_map[tid] = {
+            'id': tid, 'name': name, 'duration': duration,
+            'predecessors': preds, 'successors': [],
+        }
+    # 构建后继关系
+    for tid, task in task_map.items():
+        for pred in task['predecessors']:
+            if pred in task_map:
+                task_map[pred]['successors'].append(tid)
+
+    # 正向计算: 最早开始(ES)和最早完成(EF)
+    calculated = set()
+    max_iterations = len(task_map) * 2 + 10
+    for _ in range(max_iterations):
+        progress = False
+        for tid, task in task_map.items():
+            if tid in calculated:
+                continue
+            if all(p in calculated for p in task['predecessors']):
+                if not task['predecessors']:
+                    task['ES'] = 0
+                else:
+                    task['ES'] = max(task_map[p]['EF'] for p in task['predecessors'])
+                task['EF'] = task['ES'] + task['duration']
+                calculated.add(tid)
+                progress = True
+        if not progress:
+            break
+        if len(calculated) == len(task_map):
+            break
+
+    # 项目总工期
+    project_duration = max((t.get('EF', 0) for t in task_map.values()), default=0)
+
+    # 逆向计算: 最迟开始(LS)和最迟完成(LF)
+    late_calculated = set()
+    for tid, task in task_map.items():
+        if not task['successors']:
+            task['LF'] = project_duration
+            task['LS'] = task['LF'] - task['duration']
+            late_calculated.add(tid)
+
+    for _ in range(max_iterations):
+        progress = False
+        for tid, task in task_map.items():
+            if tid in late_calculated:
+                continue
+            if all(s in late_calculated for s in task['successors']):
+                if task['successors']:
+                    task['LF'] = min(task_map[s]['LS'] for s in task['successors'])
+                else:
+                    task['LF'] = project_duration
+                task['LS'] = task['LF'] - task['duration']
+                late_calculated.add(tid)
+                progress = True
+        if not progress:
+            break
+        if len(late_calculated) == len(task_map):
+            break
+
+    # 计算时差
+    for tid, task in task_map.items():
+        task['TF'] = task.get('LF', 0) - task.get('EF', 0)  # 总时差
+        # 自由时差 FF = min(ES_successors) - EF
+        if task['successors']:
+            min_es_succ = min(task_map[s]['ES'] for s in task['successors'])
+            task['FF'] = min_es_succ - task['EF']
+        else:
+            task['FF'] = project_duration - task['EF']
+
+    # 关键路径: TF=0 的任务
+    critical_path = [tid for tid, task in task_map.items() if task.get('TF', 0) == 0]
+
+    return {
+        'tasks': {tid: {
+            'name': t['name'],
+            'duration': t['duration'],
+            'ES': t.get('ES', 0), 'EF': t.get('EF', 0),
+            'LS': t.get('LS', 0), 'LF': t.get('LF', 0),
+            'TF': t.get('TF', 0), 'FF': t.get('FF', 0),
+            'is_critical': t.get('TF', 0) == 0,
+        } for tid, t in task_map.items()},
+        'project_duration': project_duration,
+        'critical_path': critical_path,
+    }
+```
+
+### 12.2 横道图（甘特图）生成
+
+```python
+def generate_gantt_chart(
+    cpm_result: dict,
+    output_path: str = None,
+    start_date: str = '2026-01-01',
+) -> str:
+    """
+    生成横道图(甘特图) — 使用matplotlib
+    """
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    from datetime import datetime, timedelta
+
+    start = datetime.strptime(start_date, '%Y-%m-%d')
+    tasks = cpm_result['tasks']
+
+    # 按最早开始时间排序
+    sorted_tasks = sorted(tasks.items(), key=lambda x: x[1]['ES'])
+
+    fig, ax = plt.subplots(figsize=(16, max(6, len(sorted_tasks) * 0.4)))
+
+    y_positions = []
+    y_labels = []
+    for i, (tid, task) in enumerate(sorted_tasks):
+        y = len(sorted_tasks) - i - 1
+        y_positions.append(y)
+        y_labels.append(f"{tid} {task['name']}")
+
+        start_day = start + timedelta(days=task['ES'])
+        duration = task['duration']
+
+        # 关键路径红色，非关键蓝色
+        color = '#FF4444' if task['is_critical'] else '#4488CC'
+        ax.barh(y, duration, left=task['ES'], height=0.6,
+                color=color, alpha=0.8, edgecolor='black', linewidth=0.5)
+
+        # 标注工期
+        ax.text(task['ES'] + duration / 2, y, f"{task['duration']}d",
+                ha='center', va='center', fontsize=7, color='white', fontweight='bold')
+
+    ax.set_yticks(y_positions)
+    ax.set_yticklabels(y_labels, fontsize=8)
+    ax.set_xlabel('日期', fontsize=10)
+    ax.set_title(f'施工进度横道图 (总工期: {cpm_result["project_duration"]}天)', fontsize=12)
+
+    # X轴日期格式
+    max_days = cpm_result['project_duration']
+    ax.set_xlim(-1, max_days + 5)
+    week_ticks = list(range(0, max_days + 7, 7))
+    week_labels = [(start + timedelta(days=d)).strftime('%m-%d') for d in week_ticks]
+    ax.set_xticks(week_ticks)
+    ax.set_xticklabels(week_labels, fontsize=7, rotation=45)
+
+    ax.grid(axis='x', alpha=0.3)
+    ax.legend(['关键路径', '非关键路径'], loc='upper right', fontsize=8)
+
+    plt.tight_layout()
+    if output_path:
+        plt.savefig(output_path, dpi=150)
+        plt.close()
+        return output_path
+    else:
+        plt.close()
+        return None
+```
+
+### 12.3 资源动态曲线
+
+```python
+def calculate_resource_curve(
+    cpm_result: dict,
+    resources: dict,  # {task_id: (workers, cost_per_day)}, 每日人工/费用
+    resource_type: str = 'workers',  # 'workers'/'cost'
+) -> dict:
+    """
+    资源动态曲线计算
+    返回每日资源需求量，用于绘制资源动态曲线和峰值分析
+    """
+    duration = cpm_result['project_duration']
+    daily_resource = [0] * (duration + 1)
+
+    for tid, task in cpm_result['tasks'].items():
+        if tid in resources:
+            r = resources[tid]
+            daily_amount = r if isinstance(r, (int, float)) else r[0] if resource_type == 'workers' else r[1]
+            for day in range(int(task['ES']), int(task['EF'])):
+                if day < len(daily_resource):
+                    daily_resource[day] += daily_amount
+
+    peak = max(daily_resource)
+    peak_day = daily_resource.index(peak)
+    avg = sum(daily_resource) / max(duration, 1)
+
+    # 不均衡系数
+    imbalance = peak / avg if avg > 0 else 0
+
+    return {
+        'daily_resource': daily_resource,
+        'peak_value': peak,
+        'peak_day': peak_day,
+        'average': round(avg, 1),
+        'imbalance_factor': round(imbalance, 2),
+        'duration': duration,
+        '评价': '均衡' if imbalance < 1.5 else '不均衡，需优化',
+    }
+```
+
+### 12.4 工期优化与资源均衡
+
+```python
+def optimize_resource_leveling(
+    cpm_result: dict,
+    resources: dict,
+    max_iterations: int = 100,
+) -> dict:
+    """
+    资源均衡优化（启发式方法）
+    将非关键工作在时差范围内移动，使资源需求更均衡
+    依据: 工期固定-资源均衡问题(RCPSP)
+    """
+    tasks = dict(cpm_result['tasks'])
+    duration = cpm_result['project_duration']
+
+    # 初始资源曲线
+    initial = calculate_resource_curve(cpm_result, resources)
+
+    best_schedule = {tid: {'ES': t['ES']} for tid, t in tasks.items()}
+    best_variance = _resource_variance(initial['daily_resource'])
+
+    # 尝试移动非关键任务
+    for _ in range(max_iterations):
+        improved = False
+        non_critical = [(tid, t) for tid, t in tasks.items()
+                        if not t['is_critical'] and t['TF'] > 0]
+
+        for tid, task in non_critical:
+            original_es = best_schedule[tid]['ES']
+            best_shift = 0
+
+            for shift in range(0, int(task['TF']) + 1):
+                best_schedule[tid]['ES'] = original_es + shift
+                temp_cpm = _rebuild_schedule(tasks, best_schedule, duration)
+                temp_curve = calculate_resource_curve(temp_cpm, resources)
+                v = _resource_variance(temp_curve['daily_resource'])
+                if v < best_variance:
+                    best_variance = v
+                    best_shift = shift
+
+            best_schedule[tid]['ES'] = original_es + best_shift
+            if best_shift > 0:
+                improved = True
+
+        if not improved:
+            break
+
+    # 最终结果
+    final_cpm = _rebuild_schedule(tasks, best_schedule, duration)
+    final_curve = calculate_resource_curve(final_cpm, resources)
+
+    return {
+        '优化前峰值': initial['peak_value'],
+        '优化后峰值': final_curve['peak_value'],
+        '优化前不均衡系数': initial['imbalance_factor'],
+        '优化后不均衡系数': final_curve['imbalance_factor'],
+        '改善率': f'{(1 - best_variance / _resource_variance(initial["daily_resource"]))*100:.1f}%',
+        '优化后日程': best_schedule,
+        '评价': '优化效果显著' if initial['imbalance_factor'] - final_curve['imbalance_factor'] > 0.2 else '优化效果一般',
+    }
+
+def _resource_variance(daily: list) -> float:
+    """计算资源方差的Σ(Ri - Ravg)²"""
+    n = len(daily)
+    avg = sum(daily) / max(n, 1)
+    return sum((r - avg) ** 2 for r in daily)
+
+def _rebuild_schedule(tasks: dict, schedule: dict, duration: int) -> dict:
+    """根据新的ES重建CPM结果"""
+    result_tasks = {}
+    for tid, task in tasks.items():
+        es = schedule[tid]['ES']
+        result_tasks[tid] = {
+            **task,
+            'ES': es,
+            'EF': es + task['duration'],
+            'is_critical': task['is_critical'],
+        }
+    return {'tasks': result_tasks, 'project_duration': duration, 'critical_path': []}
+```
+
+### 12.5 标准施工工序模板
+
+```python
+# 常见工程类型的标准工序分解
+STANDARD_SEQUENCES = {
+    'building': [
+        # (工序号, 名称, 工期(天), 紧前工序)
+        ('A', '施工准备', 7, []),
+        ('B', '土方开挖', 15, ['A']),
+        ('C', '基坑支护', 20, ['B']),
+        ('D', '基础垫层', 3, ['C']),
+        ('E', '基础施工', 25, ['D']),
+        ('F', '地下室外墙', 15, ['E']),
+        ('G', '±0.000以下回填', 5, ['F']),
+        ('H', '一层结构', 12, ['G']),
+        ('I', '二层结构', 12, ['H']),
+        ('J', '主体结构(标准层)', 10, ['I']),
+        ('K', '屋面工程', 15, ['J']),
+        ('L', '砌筑工程', 30, ['J']),
+        ('M', '抹灰工程', 25, ['L']),
+        ('N', '门窗安装', 20, ['M']),
+        ('O', '外墙装饰', 20, ['K', 'N']),
+        ('P', '室内精装', 40, ['M', 'N']),
+        ('Q', '机电安装', 45, ['J']),
+        ('R', '电梯安装', 20, ['Q']),
+        ('S', '室外工程', 15, ['O', 'P']),
+        ('T', '竣工验收', 7, ['Q', 'R', 'S']),
+    ],
+    'highway': [
+        ('A', '施工准备', 10, []),
+        ('B', '路基清表', 15, ['A']),
+        ('C', '路基填筑', 60, ['B']),
+        ('D', '涵洞施工', 30, ['B']),
+        ('E', '路基排水', 20, ['C']),
+        ('F', '底基层施工', 25, ['C', 'D']),
+        ('G', '基层施工', 20, ['F']),
+        ('H', '面层施工', 30, ['G']),
+        ('I', '桥梁基础', 45, ['A']),
+        ('J', '桥梁下部结构', 40, ['I']),
+        ('K', '桥梁上部结构', 60, ['J']),
+        ('L', '桥面系', 20, ['K', 'H']),
+        ('M', '交通安全设施', 15, ['H', 'L']),
+        ('N', '绿化工程', 20, ['E', 'H']),
+        ('O', '交工验收', 7, ['M', 'N']),
+    ],
+    'tunnel': [
+        ('A', '施工准备', 10, []),
+        ('B', '洞口工程', 15, ['A']),
+        ('C', '超前支护', 10, ['B']),
+        ('D', '上台阶开挖', 180, ['C']),
+        ('E', '下台阶开挖', 150, ['D']),
+        ('F', '初期支护', 160, ['D']),
+        ('G', '防水层', 140, ['F']),
+        ('H', '二次衬砌', 150, ['G']),
+        ('I', '仰拱填充', 130, ['E']),
+        ('J', '水沟电缆槽', 60, ['H', 'I']),
+        ('K', '路面工程', 30, ['J']),
+        ('L', '机电安装', 40, ['J']),
+        ('M', '装饰装修', 25, ['K']),
+        ('N', '竣工验收', 7, ['L', 'M']),
+    ],
+}
+
+def get_standard_sequence(project_type: str) -> list:
+    """获取标准施工工序模板"""
+    return STANDARD_SEQUENCES.get(project_type, STANDARD_SEQUENCES['building'])
+```
+
+### 12.6 进度跟踪与偏差分析
+
+```python
+def track_schedule_progress(
+    cpm_result: dict,
+    actual_progress: dict,  # {task_id: 实际完成百分比(0~1)}
+    current_day: int,
+) -> dict:
+    """
+    进度跟踪与偏差分析（挣值法 EVM）
+    依据: GB/T 50502-2009 附录B
+    """
+    tasks = cpm_result['tasks']
+    total_duration = cpm_result['project_duration']
+
+    # 计划价值 PV (Plan Value) — 计划完成百分比
+    pv = 0
+    for tid, task in tasks.items():
+        planned = min(max((current_day - task['ES']) / max(task['duration'], 1), 0), 1)
+        pv += planned * task['duration']
+
+    # 挣值 EV (Earned Value) — 实际完成百分比
+    ev = 0
+    for tid, task in tasks.items():
+        actual = actual_progress.get(tid, 0)
+        ev += actual * task['duration']
+
+    # 实际成本 AC (Actual Cost) — 简化: 按天数计
+    ac = current_day  # 简化: 实际消耗时间
+
+    # 偏差分析
+    sv = ev - pv  # 进度偏差 (正值=提前)
+    cv = ev - ac  # 成本偏差 (正值=节约)
+
+    # 绩效指数
+    spi = ev / pv if pv > 0 else 0  # 进度绩效指数 (SPI>1=提前)
+    cpi = ev / ac if ac > 0 else 0  # 成本绩效指数 (CPI>1=节约)
+
+    # 预测完工工期
+    estimated_total = total_duration / spi if spi > 0 else total_duration
+    remaining_days = estimated_total - current_day
+
+    # 偏差状态判断
+    if spi >= 1.0:
+        status = '进度正常或提前'
+    elif spi >= 0.9:
+        status = '进度轻微滞后'
+    elif spi >= 0.8:
+        status = '进度滞后，需关注'
+    else:
+        status = '进度严重滞后，需采取措施'
+
+    return {
+        '当前日期': f'第{current_day}天',
+        '计划工期': f'{total_duration}天',
+        '计划价值PV': f'{pv:.1f} 工日',
+        '挣值EV': f'{ev:.1f} 工日',
+        '实际成本AC': f'{ac} 工日',
+        '进度偏差SV': f'{sv:.1f} 工日 ({"提前" if sv > 0 else "滞后"})',
+        '成本偏差CV': f'{cv:.1f} 工日',
+        '进度绩效指数SPI': f'{spi:.3f}',
+        '成本绩效指数CPI': f'{cpi:.3f}',
+        '预测完工工期': f'{estimated_total:.0f}天',
+        '剩余工期': f'{remaining_days:.0f}天',
+        '进度状态': status,
+        '建议': _schedule_suggestion(spi, cpi),
+    }
+
+def _schedule_suggestion(spi: float, cpi: float) -> str:
+    """进度建议"""
+    suggestions = []
+    if spi < 0.9:
+        suggestions.append('增加人力/机械投入，优化关键路径工序')
+    if spi < 0.8:
+        suggestions.append('考虑平行施工或夜间加班')
+    if cpi < 0.9:
+        suggestions.append('成本超支，审查资源使用效率')
+    if not suggestions:
+        suggestions.append('进度正常，继续保持')
+    return '；'.join(suggestions)
+```
+
+---
+
+## 十三、Excel计算表生成器 (Excel Calculation Sheet Generator)
+
+> 多模板、公式联动、自动汇总的Excel计算表生成系统
+> 依赖: openpyxl ≥ 3.1
+
+---
+
+### 13.1 样式系统
+
+```python
+from openpyxl import Workbook
+from openpyxl.styles import (Font, Alignment, Border, Side, PatternFill,
+                              Protection, NamedStyle)
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.dimensions import ColumnDimension
+from openpyxl.formatting.rule import ColorScaleRule, CellIsRule
+
+# ============ 统一样式系统 ============
+STYLES = {
+    'title': {
+        'font': Font(name='宋体', size=16, bold=True, color='1F4E79'),
+        'alignment': Alignment(horizontal='center', vertical='center'),
+    },
+    'subtitle': {
+        'font': Font(name='宋体', size=12, bold=True, color='FFFFFF'),
+        'fill': PatternFill('solid', start_color='2E75B6'),
+        'alignment': Alignment(horizontal='center', vertical='center'),
+        'border': Border(
+            left=Side(style='thin'), right=Side(style='thin'),
+            top=Side(style='thin'), bottom=Side(style='thin')),
+    },
+    'header': {
+        'font': Font(name='宋体', size=10, bold=True, color='FFFFFF'),
+        'fill': PatternFill('solid', start_color='4472C4'),
+        'alignment': Alignment(horizontal='center', vertical='center', wrap_text=True),
+        'border': Border(
+            left=Side(style='thin'), right=Side(style='thin'),
+            top=Side(style='thin'), bottom=Side(style='thin')),
+    },
+    'data': {
+        'font': Font(name='宋体', size=10),
+        'alignment': Alignment(horizontal='center', vertical='center'),
+        'border': Border(
+            left=Side(style='thin'), right=Side(style='thin'),
+            top=Side(style='thin'), bottom=Side(style='thin')),
+    },
+    'data_left': {
+        'font': Font(name='宋体', size=10),
+        'alignment': Alignment(horizontal='left', vertical='center', wrap_text=True),
+        'border': Border(
+            left=Side(style='thin'), right=Side(style='thin'),
+            top=Side(style='thin'), bottom=Side(style='thin')),
+    },
+    'subtotal': {
+        'font': Font(name='宋体', size=10, bold=True),
+        'fill': PatternFill('solid', start_color='D6E4F0'),
+        'alignment': Alignment(horizontal='center'),
+        'border': Border(
+            left=Side(style='thin'), right=Side(style='thin'),
+            top=Side(style='medium'), bottom=Side(style='thin')),
+    },
+    'total': {
+        'font': Font(name='宋体', size=11, bold=True, color='1F4E79'),
+        'fill': PatternFill('solid', start_color='B4C7E7'),
+        'alignment': Alignment(horizontal='center'),
+        'border': Border(
+            left=Side(style='medium'), right=Side(style='medium'),
+            top=Side(style='medium'), bottom=Side(style='double')),
+    },
+    'note': {
+        'font': Font(name='宋体', size=9, italic=True, color='808080'),
+        'alignment': Alignment(horizontal='left'),
+    },
+    'input': {
+        'font': Font(name='宋体', size=10, color='0000CC'),
+        'fill': PatternFill('solid', start_color='FFF2CC'),
+        'border': Border(
+            left=Side(style='thin'), right=Side(style='thin'),
+            top=Side(style='thin'), bottom=Side(style='thin')),
+    },
+    'formula': {
+        'font': Font(name='宋体', size=10, color='0070C0'),
+        'fill': PatternFill('solid', start_color='E2EFDA'),
+        'border': Border(
+            left=Side(style='thin'), right=Side(style='thin'),
+            top=Side(style='thin'), bottom=Side(style='thin')),
+    },
+}
+
+def apply_style(cell, style_name: str):
+    """快速应用预定义样式"""
+    s = STYLES.get(style_name, STYLES['data'])
+    if 'font' in s: cell.font = s['font']
+    if 'fill' in s: cell.fill = s['fill']
+    if 'alignment' in s: cell.alignment = s['alignment']
+    if 'border' in s: cell.border = s['border']
+
+def set_column_widths(ws, widths: dict):
+    """批量设置列宽 {列字母: 宽度}"""
+    for col, width in widths.items():
+        ws.column_dimensions[col].width = width
+```
+
+### 13.2 混凝土工程量计算表模板
+
+```python
+def generate_concrete_quantity_sheet(
+    wb: Workbook,
+    project_name: str = '',
+    data: list = None,  # [(部位, 构件类型, 截面尺寸, 长度/高度, 数量, 备注), ...]
+) -> str:
+    """
+    生成混凝土工程量计算表(含公式联动)
+    黄色单元格=输入项, 绿色单元格=自动计算公式
+    """
+    ws = wb.create_sheet("混凝土工程量计算表")
+
+    # === 标题区 ===
+    ws.merge_cells('A1:H1')
+    ws['A1'] = f"混凝土工程量计算表"
+    apply_style(ws['A1'], 'title')
+    ws.row_dimensions[1].height = 30
+
+    ws.merge_cells('A2:H2')
+    ws['A2'] = f"工程名称: {project_name}"
+    apply_style(ws['A2'], 'note')
+
+    # === 表头 ===
+    headers = ['序号', '部位/楼层', '构件类型', '截面尺寸(mm)', '长度/高度(m)',
+               '数量', '体积(m³)', '备注']
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=4, column=col, value=h)
+        apply_style(cell, 'header')
+    ws.row_dimensions[4].height = 30
+
+    # === 数据行(含Excel公式联动) ===
+    if not data:
+        # 提供空模板(15行)
+        data = [('', '', '', '', '', '')] * 15
+
+    start_row = 5
+    for idx, (location, elem_type, section, length, count, note) in enumerate(data):
+        r = start_row + idx
+        # 序号
+        ws.cell(row=r, column=1, value=idx + 1)
+        apply_style(ws.cell(row=r, column=1), 'data')
+
+        # 输入项(黄色)
+        for col, val in [(2, location), (3, elem_type), (4, section),
+                         (5, length), (6, count), (8, note)]:
+            cell = ws.cell(row=r, column=col, value=val)
+            apply_style(cell, 'input')
+
+        # 公式项(绿色): G列 = D(截面解析) × E(长度) × F(数量)
+        # 截面尺寸格式如"600×600"或"300×500(宽×高)"
+        formula = f'=IFERROR(_parse_section(D{r})*E{r}*F{r},"")'
+        cell = ws.cell(row=r, column=7, value=formula)
+        apply_style(cell, 'formula')
+        cell.number_format = '0.00'
+
+    # === 合计行 ===
+    end_row = start_row + len(data)
+    ws.merge_cells(f'A{end_row}:F{end_row}')
+    ws.cell(row=end_row, column=1, value="合计")
+    apply_style(ws.cell(row=end_row, column=1), 'total')
+    sum_formula = f'=SUM(G{start_row}:G{end_row-1})'
+    cell = ws.cell(row=end_row, column=7, value=sum_formula)
+    apply_style(cell, 'total')
+    cell.number_format = '0.00'
+    ws.cell(row=end_row, column=8, value="m³")
+    apply_style(ws.cell(row=end_row, column=8), 'total')
+
+    # === 说明区 ===
+    note_row = end_row + 2
+    ws.merge_cells(f'A{note_row}:H{note_row}')
+    ws.cell(row=note_row, column=1,
+            value="说明: 黄色单元格为输入项, 绿色单元格为自动计算公式。截面尺寸格式: 宽×高(如300×500)")
+    apply_style(ws.cell(row=note_row, column=1), 'note')
+
+    # 列宽
+    set_column_widths(ws, {'A': 6, 'B': 16, 'C': 14, 'D': 18, 'E': 14, 'F': 8, 'G': 12, 'H': 20})
+
+    return ws.title
+```
+
+### 13.3 钢筋工程量计算表模板
+
+```python
+def generate_rebar_quantity_sheet(
+    wb: Workbook,
+    project_name: str = '',
+    data: list = None,
+) -> str:
+    """
+    生成钢筋工程量计算表(含理论重量联动)
+    计算: 重量 = 长度 × 数量 × 理论重量(kg/m)
+    """
+    ws = wb.create_sheet("钢筋工程量计算表")
+
+    ws.merge_cells('A1:J1')
+    ws['A1'] = "钢筋工程量计算表"
+    apply_style(ws['A1'], 'title')
+    ws.row_dimensions[1].height = 30
+
+    ws.merge_cells('A2:J2')
+    ws['A2'] = f"工程名称: {project_name}"
+    apply_style(ws['A2'], 'note')
+
+    # 钢筋理论重量参考表
+    ws.merge_cells('A4:J4')
+    ws['A4'] = "钢筋理论重量参考表(kg/m)"
+    apply_style(ws['A4'], 'subtitle')
+
+    rebar_ref = [['Φ6', 0.222], ['Φ8', 0.395], ['Φ10', 0.617], ['Φ12', 0.888],
+                 ['Φ14', 1.21], ['Φ16', 1.58], ['Φ18', 2.0], ['Φ20', 2.47],
+                 ['Φ22', 2.98], ['Φ25', 3.85], ['Φ28', 4.83], ['Φ32', 6.31]]
+    for col, (spec, weight) in enumerate(rebar_ref):
+        c1 = ws.cell(row=5, column=col*2+1, value=spec)
+        c2 = ws.cell(row=5, column=col*2+2, value=weight)
+        apply_style(c1, 'data')
+        apply_style(c2, 'data')
+        c2.number_format = '0.000'
+
+    # 表头
+    headers = ['序号', '部位', '钢筋编号', '规格', '简图', '单根长度(m)',
+               '根数', '理论重量(kg/m)', '总重量(kg)', '备注']
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=7, column=col, value=h)
+        apply_style(cell, 'header')
+    ws.row_dimensions[7].height = 30
+
+    # 数据行
+    if not data:
+        data = [('', '', '', '', '', '', '')] * 15
+
+    start_row = 8
+    for idx, (location, rebar_id, spec, sketch, length, count, note) in enumerate(data):
+        r = start_row + idx
+        ws.cell(row=r, column=1, value=idx + 1)
+        apply_style(ws.cell(row=r, column=1), 'data')
+
+        for col, val in [(2, location), (3, rebar_id), (4, spec), (5, sketch),
+                         (6, length), (7, count), (10, note)]:
+            cell = ws.cell(row=r, column=col, value=val)
+            apply_style(cell, 'input')
+
+        # 理论重量(H列): VLOOKUP查表
+        ws.cell(row=r, column=8,
+                value=f'=IFERROR(VLOOKUP(D{r},$A$5:$X$5,2,FALSE),"")')
+        apply_style(ws.cell(row=r, column=8), 'formula')
+        ws.cell(row=r, column=8).number_format = '0.000'
+
+        # 总重量(I列): F(长度) × G(根数) × H(理论重量)
+        ws.cell(row=r, column=9,
+                value=f'=IFERROR(F{r}*G{r}*H{r},"")')
+        apply_style(ws.cell(row=r, column=9), 'formula')
+        ws.cell(row=r, column=9).number_format = '0.0'
+
+    # 合计
+    end_row = start_row + len(data)
+    ws.merge_cells(f'A{end_row}:H{end_row}')
+    ws.cell(row=end_row, column=1, value="合计")
+    apply_style(ws.cell(row=end_row, column=1), 'total')
+    ws.cell(row=end_row, column=9, value=f'=SUM(I{start_row}:I{end_row-1})')
+    apply_style(ws.cell(row=end_row, column=9), 'total')
+    ws.cell(row=end_row, column=9).number_format = '0.0'
+    ws.cell(row=end_row, column=10, value="kg")
+    apply_style(ws.cell(row=end_row, column=10), 'total')
+
+    set_column_widths(ws, {'A': 6, 'B': 14, 'C': 12, 'D': 10, 'E': 16, 'F': 14, 'G': 8, 'H': 14, 'I': 14, 'J': 18})
+
+    return ws.title
+```
+
+### 13.4 综合工程量清单汇总表
+
+```python
+def generate_quantity_summary_sheet(wb: Workbook, project_name: str = '') -> str:
+    """
+    综合工程量清单汇总表(多专业、自动汇总)
+    """
+    ws = wb.create_sheet("工程量清单汇总表")
+
+    ws.merge_cells('A1:G1')
+    ws['A1'] = "工程量清单汇总表"
+    apply_style(ws['A1'], 'title')
+    ws.row_dimensions[1].height = 30
+
+    ws.merge_cells('A2:G2')
+    ws['A2'] = f"工程名称: {project_name}"
+    apply_style(ws['A2'], 'note')
+
+    # 表头
+    headers = ['序号', '清单编码', '项目名称', '计量单位', '工程量', '专业类别', '备注']
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=4, column=col, value=h)
+        apply_style(cell, 'header')
+    ws.row_dimensions[4].height = 30
+
+    # 专业分类汇总区
+    categories = [
+        ('土建工程', '0101~0117', 20),
+        ('市政工程', '0401~0413', 15),
+        ('公路工程', 'JTG', 15),
+        ('幕墙工程', '0110', 10),
+        ('钢结构工程', '0106', 10),
+        ('隧道工程', '0114', 10),
+    ]
+
+    start_row = 5
+    current_row = start_row
+    category_subtotals = {}
+
+    for cat_name, code_range, num_rows in categories:
+        # 专业小标题
+        ws.merge_cells(f'A{current_row}:G{current_row}')
+        ws.cell(row=current_row, column=1, value=f"  ▶ {cat_name} ({code_range})")
+        apply_style(ws.cell(row=current_row, column=1), 'subtitle')
+        current_row += 1
+
+        # 空行供填写
+        cat_start = current_row
+        for i in range(num_rows):
+            ws.cell(row=current_row, column=1, value=i + 1)
+            apply_style(ws.cell(row=current_row, column=1), 'data')
+            for col in range(2, 8):
+                apply_style(ws.cell(row=current_row, column=col), 'input')
+            current_row += 1
+
+        # 专业小计
+        ws.merge_cells(f'A{current_row}:D{current_row}')
+        ws.cell(row=current_row, column=1, value=f"{cat_name} 小计")
+        apply_style(ws.cell(row=current_row, column=1), 'subtotal')
+        ws.cell(row=current_row, column=5, value=f'=COUNTA(B{cat_start}:B{current_row-1})')
+        apply_style(ws.cell(row=current_row, column=5), 'subtotal')
+        ws.cell(row=current_row, column=6, value=f'共{num_rows}项')
+        apply_style(ws.cell(row=current_row, column=6), 'subtotal')
+
+        category_subtotals[cat_name] = current_row
+        current_row += 1
+
+    # 总计行
+    ws.merge_cells(f'A{current_row}:D{current_row}')
+    ws.cell(row=current_row, column=1, value="工程总计")
+    apply_style(ws.cell(row=current_row, column=1), 'total')
+    total_rows = [r for r in category_subtotals.values()]
+    count_formula = '=' + '+'.join([f'COUNTA(B{s+1}:B{r-1})' for s, r in
+        zip([start_row] + total_rows, total_rows + [current_row])])
+    ws.cell(row=current_row, column=5, value=f'=COUNTA(B5:B{current_row-1})')
+    apply_style(ws.cell(row=current_row, column=5), 'total')
+
+    set_column_widths(ws, {'A': 6, 'B': 16, 'C': 30, 'D': 10, 'E': 14, 'F': 14, 'G': 18})
+
+    return ws.title
+```
+
+### 13.5 工程造价汇总表
+
+```python
+def generate_cost_summary_sheet(wb: Workbook, project_name: str = '') -> str:
+    """
+    工程造价汇总表(含公式联动、税率自动计算)
+    """
+    ws = wb.create_sheet("工程造价汇总表")
+
+    ws.merge_cells('A1:E1')
+    ws['A1'] = "工程造价汇总表"
+    apply_style(ws['A1'], 'title')
+    ws.row_dimensions[1].height = 30
+
+    ws.merge_cells('A2:E2')
+    ws['A2'] = f"工程名称: {project_name}"
+    apply_style(ws['A2'], 'note')
+
+    # 参数区
+    ws['A4'] = "计税方式:"
+    apply_style(ws['A4'], 'data_left')
+    ws['B4'] = "一般计税"
+    apply_style(ws['B4'], 'input')
+    ws['C4'] = "税率:"
+    apply_style(ws['C4'], 'data_left')
+    ws['D4'] = 0.09
+    apply_style(ws['D4'], 'input')
+    ws['D4'].number_format = '0.00%'
+
+    # 汇总表
+    headers = ['序号', '费用项目', '计算基础', '费率(%)', '金额(元)']
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=6, column=col, value=h)
+        apply_style(cell, 'header')
+    ws.row_dimensions[6].height = 30
+
+    # 费用行(含公式联动)
+    rows_data = [
+        ('1', '分部分项工程费', '按清单合计', '', '=0'),  # 手动输入或引用
+        ('2', '措施项目费', '人工+机械', '按实际', '=0'),
+        ('2.1', '  安全文明施工费', '分部分项工程费', '3.00%', '=D7*0.03'),
+        ('2.2', '  夜间施工增加费', '分部分项工程费', '0.50%', '=D7*0.005'),
+        ('2.3', '  二次搬运费', '分部分项工程费', '0.80%', '=D7*0.008'),
+        ('2.4', '  冬雨季施工增加费', '分部分项工程费', '1.00%', '=D7*0.01'),
+        ('2.5', '  脚手架费', '按实际', '', '=0'),
+        ('2.6', '  模板费', '按实际', '', '=0'),
+        ('3', '其他项目费', '按实际', '', '=0'),
+        ('4', '规费', '1+2+3', '4.30%', '=(D7+D8+D15)*0.043'),
+        ('4.1', '  社保费', '1+2+3', '3.20%', '=(D7+D8+D15)*0.032'),
+        ('4.2', '  住房公积金', '1+2+3', '1.00%', '=(D7+D8+D15)*0.01'),
+        ('4.3', '  工程排污费', '1+2+3', '0.10%', '=(D7+D8+D15)*0.001'),
+        ('5', '税金', '1+2+3+4', '=D4', '=(D7+D8+D15+D16)*D4'),
+        ('', '工程总造价', '1+2+3+4+5', '', '=D7+D8+D15+D16+D20'),
+    ]
+
+    start_row = 7
+    for idx, (no, name, base, rate, formula) in enumerate(rows_data):
+        r = start_row + idx
+        ws.cell(row=r, column=1, value=no)
+        ws.cell(row=r, column=2, value=name)
+
+        if no in ('', '5') or name == '工程总造价':
+            # 总计行
+            apply_style(ws.cell(row=r, column=1), 'total')
+            apply_style(ws.cell(row=r, column=2), 'total')
+            ws.cell(row=r, column=3, value=base)
+            apply_style(ws.cell(row=r, column=3), 'total')
+            ws.cell(row=r, column=4, value=rate)
+            apply_style(ws.cell(row=r, column=4), 'total')
+            ws.cell(row=r, column=5, value=formula)
+            apply_style(ws.cell(row=r, column=5), 'total')
+            ws.cell(row=r, column=5).number_format = '#,##0.00'
+        elif '.' in str(no):
+            # 子项行
+            apply_style(ws.cell(row=r, column=1), 'data')
+            apply_style(ws.cell(row=r, column=2), 'data_left')
+            ws.cell(row=r, column=3, value=base)
+            apply_style(ws.cell(row=r, column=3), 'data_left')
+            ws.cell(row=r, column=4, value=rate)
+            apply_style(ws.cell(row=r, column=4), 'data')
+            ws.cell(row=r, column=5, value=formula)
+            apply_style(ws.cell(row=r, column=5), 'formula')
+            ws.cell(row=r, column=5).number_format = '#,##0.00'
+        else:
+            # 主项行
+            apply_style(ws.cell(row=r, column=1), 'subtotal')
+            apply_style(ws.cell(row=r, column=2), 'subtotal')
+            ws.cell(row=r, column=3, value=base)
+            apply_style(ws.cell(row=r, column=3), 'subtotal')
+            ws.cell(row=r, column=4, value=rate)
+            apply_style(ws.cell(row=r, column=4), 'subtotal')
+            ws.cell(row=r, column=5, value=formula)
+            apply_style(ws.cell(row=r, column=5), 'subtotal')
+            ws.cell(row=r, column=5).number_format = '#,##0.00'
+
+    # 更新措施项目费合计公式
+    ws.cell(row=8, column=5, value='=D9+D10+D11+D12+D13+D14')
+    # 更新规费合计公式
+    ws.cell(row=16, column=5, value='=D17+D18+D19')
+
+    # 说明
+    note_row = start_row + len(rows_data) + 1
+    ws.merge_cells(f'A{note_row}:E{note_row}')
+    ws.cell(row=note_row, column=1,
+            value="说明: 黄色=输入项, 绿色=公式自动计算。修改D4税率或D7分部分项工程费后,所有费用自动联动更新。")
+    apply_style(ws.cell(row=note_row, column=1), 'note')
+
+    set_column_widths(ws, {'A': 6, 'B': 24, 'C': 16, 'D': 12, 'E': 16})
+
+    return ws.title
+```
+
+### 13.6 一键生成完整工程Excel工作簿
+
+```python
+def generate_full_project_workbook(
+    project_name: str = '',
+    output_path: str = '工程量计算表.xlsx',
+    sheets: list = None,
+) -> str:
+    """
+    一键生成完整工程Excel工作簿
+    包含: 混凝土算量表 + 钢筋算量表 + 清单汇总表 + 造价汇总表
+    """
+    wb = Workbook()
+
+    # 删除默认Sheet
+    wb.remove(wb.active)
+
+    # 默认生成全部Sheet
+    if sheets is None:
+        sheets = ['concrete', 'rebar', 'summary', 'cost']
+
+    if 'concrete' in sheets:
+        generate_concrete_quantity_sheet(wb, project_name)
+
+    if 'rebar' in sheets:
+        generate_rebar_quantity_sheet(wb, project_name)
+
+    if 'summary' in sheets:
+        generate_quantity_summary_sheet(wb, project_name)
+
+    if 'cost' in sheets:
+        generate_cost_summary_sheet(wb, project_name)
+
+    # 设置封面
+    ws_cover = wb.create_sheet("封面", 0)
+    ws_cover.merge_cells('A1:H1')
+    ws_cover['A1'] = project_name or "工程量计算表"
+    apply_style(ws_cover['A1'], 'title')
+    ws_cover.row_dimensions[1].height = 40
+
+    ws_cover.merge_cells('A2:H2')
+    ws_cover['A2'] = f"生成日期: {__import__('datetime').datetime.now().strftime('%Y-%m-%d')}"
+    apply_style(ws_cover['A2'], 'note')
+
+    # 目录
+    ws_cover.merge_cells('A4:H4')
+    ws_cover['A4'] = "目录"
+    apply_style(ws_cover['A4'], 'subtitle')
+
+    sheet_names = [ws.title for ws in wb.worksheets if ws.title != '封面']
+    for i, name in enumerate(sheet_names):
+        ws_cover.cell(row=5 + i, column=1, value=f"{i+1}. {name}")
+        apply_style(ws_cover.cell(row=5 + i, column=1), 'data_left')
+
+    wb.save(output_path)
+    return output_path
+```
+
+### 13.7 条件格式与数据校验
+
+```python
+def add_conditional_formatting(ws, cell_range: str):
+    """添加条件格式: 负值红色, 正值绿色"""
+    from openpyxl.formatting.rule import CellIsRule
+    red_font = Font(color='FF0000', bold=True)
+    green_font = Font(color='008000')
+    ws.conditional_formatting.add(cell_range,
+        CellIsRule(operator='lessThan', formula=['0'], font=red_font))
+    ws.conditional_formatting.add(cell_range,
+        CellIsRule(operator='greaterThan', formula=['0'], font=green_font))
+
+def add_data_validation(ws, cell_range: str, validation_type: str = 'list', formula: str = ''):
+    """添加数据校验下拉列表"""
+    from openpyxl.worksheet.datavalidation import DataValidation
+    dv = DataValidation(type=validation_type, formula1=formula, allow_blank=True)
+    dv.error = '输入值不在允许范围内'
+    dv.errorTitle = '输入错误'
+    ws.add_data_validation(dv)
+    dv.add(cell_range)
+```
+
+---
+
+<!-- 自动生成于 2026-07-12 23:50:50 | 模块数: 14 | 文件大小: 152,781 bytes -->
