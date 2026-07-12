@@ -36,6 +36,11 @@ MODULES = [
     "06-utilities.md",  # 实用工具
     "07-deps.md",       # 依赖库
     "08-triggers.md",   # 使用说明
+    "09-pricing.md",    # 工程造价计价
+    "10-safety.md",     # 施工安全计算
+    "11-carbon.md",     # 碳排放与绿色建筑
+    "12-schedule.md",   # 施工组织与进度
+    "13-excel.md",      # Excel计算表生成器
 ]
 
 
