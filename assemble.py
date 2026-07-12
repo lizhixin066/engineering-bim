@@ -41,6 +41,7 @@ MODULES = [
     "11-carbon.md",     # 碳排放与绿色建筑
     "12-schedule.md",   # 施工组织与进度
     "13-excel.md",      # Excel计算表生成器
+    "14-api-registry.md", # 函数注册表 (API Registry)
 ]
 
 
