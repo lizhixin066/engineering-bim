@@ -1,0 +1,24 @@
+# CAD 图纸解析
+ezdxf>=1.1.0
+opencv-python>=4.8
+
+# BIM 建模
+ifcopenshell>=0.7.0
+
+# 工程量计算
+numpy>=1.24
+shapely>=2.0
+pandas>=2.0
+
+# 点云处理
+open3d>=0.17
+laspy>=2.5
+
+# 报告生成
+openpyxl>=3.1
+matplotlib>=3.7
+xlsxwriter>=3.1
+
+# GIS 支持
+geopandas>=0.13
+fiona>=1.9
