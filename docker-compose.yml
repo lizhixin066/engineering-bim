@@ -1,0 +1,34 @@
+version: "3.8"
+
+services:
+  engineering-bim:
+    build: .
+    image: engineering-bim:latest
+    container_name: engineering-bim
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./modules:/app/modules
+    environment:
+      - PYTHONUNBUFFERED=1
+    stdin_open: true
+    tty: true
+
+  # Jupyter 开发环境（可选）
+  jupyter:
+    build: .
+    image: engineering-bim:latest
+    container_name: engineering-bim-jupyter
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./modules:/app/modules
+      - ./notebooks:/app/notebooks
+    command: >
+      jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+        --NotebookApp.token='engineering-bim'
+        --notebook-dir=/app/notebooks
+    profiles:
+      - dev
