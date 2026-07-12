@@ -618,7 +618,113 @@ result = check_scaffold_stability(height=50, step=1.8, span=1.5)
 
 ---
 
-### 14.11 函数快速索引
+### 14.11 图纸智能分析与自动算量函数 (DRAWING_TO_QUANTITY)
+
+#### FUNC-076: `classify_layers(layers)`
+- **模块**: 15-drawing-to-quantity.md §15.2.1
+- **意图**: drawing_to_quantity
+- **参数**: `layers` (list[str]) — 图层名列表
+- **返回**: `dict` — `{column:[], beam:[], wall:[], slab:[], foundation:[], opening:[], stair:[], axis:[], elevation:[], other:[]}`
+- **说明**: 基于20+关键字映射，支持子类型识别(KZ/GZ/KL/LL/SQ等)
+
+#### FUNC-077: `extract_elements_from_drawing(drawing_info, floor_height, slab_thickness)`
+- **模块**: 15-drawing-to-quantity.md §15.2.2
+- **意图**: drawing_to_quantity
+- **参数**: `drawing_info` (dict) — `parse_cad_drawing()`返回值; `floor_height` (float, 默认3.0) — 楼层高度(m); `slab_thickness` (float, 默认0.12) — 默认板厚(m)
+- **返回**: `dict` — `{columns[{id,position,width,depth,height,source}], beams[{id,start,end,width,height,length}], walls[{id,start,end,length,thickness,height}], slabs[{id,outline,area,thickness,perimeter}], foundations[], openings[{id,type,width,height}], stairs[]}`
+- **说明**: 多策略识别 — 闭合矩形→柱，平行线对→梁/墙，闭合区域→板，文字标注→截面尺寸
+
+#### FUNC-078: `extract_dimensions_from_drawing(drawing_info)`
+- **模块**: 15-drawing-to-quantity.md §15.3
+- **意图**: drawing_to_quantity
+- **参数**: `drawing_info` (dict) — `parse_cad_drawing()`返回值
+- **返回**: `dict` — `{dimensions[{type,measurement,text,layer}], elevations[{value,position,raw_text}], axis_grid{x_axes[],y_axes[],labels[]}}`
+- **说明**: 提取尺寸标注(DIMENSION实体)、标高(±0.000/H=3.600)、轴网(轴线编号A-Z/1-99)
+
+#### FUNC-079: `extract_rebar_info(drawing_info)`
+- **模块**: 15-drawing-to-quantity.md §15.4
+- **意图**: drawing_to_quantity
+- **参数**: `drawing_info` (dict) — `parse_cad_drawing()`返回值
+- **返回**: `dict` — `{rebar_items[{diameter,grade,spacing,count,legs,type,weight_kg}], element_rebar{}, summary{total_weight_kg,total_weight_t,by_diameter,item_count}}`
+- **说明**: 解析钢筋标注(Φ10@200/C16@150/2C20等)，自动区分主筋/箍筋，内置理论重量表
+
+#### FUNC-080: `auto_quantity_from_drawing(filepath, floor_height, slab_thickness, project_info)`
+- **模块**: 15-drawing-to-quantity.md §15.5
+- **意图**: drawing_to_quantity ★核心管线
+- **参数**: `filepath` (str) — CAD文件路径; `floor_height` (float, 默认3.0); `slab_thickness` (float, 默认0.12); `project_info` (dict, 可选)
+- **返回**: `dict` — `{project_info, drawing_info, elements_detected, concrete_quantities, rebar_quantities, summary{total_concrete_m3,total_formwork_m2,total_rebar_kg,total_rebar_t}, dimensions}`
+- **说明**: 端到端管线 — parse_cad_drawing() → extract_elements() → extract_dimensions() → extract_rebar() → calculate_concrete_detail() → 汇总
+- **示例**:
+```python
+report = auto_quantity_from_drawing("floor_plan.dxf", floor_height=3.0)
+# report['summary']['total_concrete_m3'] → 45.20
+# report['elements_detected']['columns'] → 12
+# report['rebar_quantities']['summary']['total_weight_t'] → 8.53
+```
+
+#### FUNC-081: `assemble_multi_floor_quantities(floor_drawings, project_info)`
+- **模块**: 15-drawing-to-quantity.md §15.6
+- **意图**: drawing_to_quantity
+- **参数**: `floor_drawings` (list) — `[(floor_name, filepath, floor_height), ...]`; `project_info` (dict, 可选)
+- **返回**: `dict` — `{project_info, floors[{floor,height,summary,elements}], floor_count, total{concrete_volume_m3,formwork_area_m2,rebar_weight_kg,rebar_weight_t,total_columns,...}}`
+- **说明**: 多层图纸分别算量后汇总
+
+#### FUNC-082: `audit_quantity_result(quantity_report, drawing_info, tolerance)`
+- **模块**: 15-drawing-to-quantity.md §15.7
+- **意图**: drawing_to_quantity
+- **参数**: `quantity_report` (dict) — `auto_quantity_from_drawing()`返回值; `tolerance` (float, 默认0.05)
+- **返回**: `dict` — `{status, issues[], warnings[], passed[], summary{issue_count,warning_count,passed_count}}`
+- **说明**: 校核4项指标 — 构件数量合理性、混凝土用量指标(m³/m²)、钢筋含量(kg/m³)、模板系数(m²/m³)
+
+#### FUNC-083: `generate_drawing_quantity_report(filepath, output_path, floor_height, project_info)`
+- **模块**: 15-drawing-to-quantity.md §15.8
+- **意图**: drawing_to_quantity
+- **参数**: `filepath` (str) — CAD文件路径; `output_path` (str, 可选) — Excel输出路径; `floor_height` (float, 默认3.0); `project_info` (dict, 可选)
+- **返回**: `dict` — 完整报告(含project/drawing_info/elements_detected/concrete_quantities/rebar_quantities/summary/audit)
+- **说明**: 端到端 — 自动算量 + 校核 + Excel导出(3个Sheet: 汇总/混凝土明细/校核)
+
+#### FUNC-084: `auto_quantity_by_discipline(filepath, discipline, params)`
+- **模块**: 15-drawing-to-quantity.md §15.9
+- **意图**: drawing_to_quantity
+- **参数**: `filepath` (str) — CAD文件路径; `discipline` (str) — 'civil'/'municipal'/'highway'/'curtain_wall'/'steel'/'tunnel'; `params` (dict, 可选)
+- **返回**: `dict` — 对应专业的算量结果
+- **说明**: 按专业路由 — civil→auto_quantity_from_drawing(), municipal→calculate_municipal_full(), highway→calculate_highway_full(), 等
+
+#### FUNC-085: `extract_municipal_elements(drawing)`
+- **模块**: 15-drawing-to-quantity.md §15.9
+- **意图**: drawing_to_quantity
+- **参数**: `drawing` (dict) — `parse_cad_drawing()`返回值
+- **返回**: `dict` — `{pipes[{start,end,length,diameter,material}], roads[{outline,area}], manholes[{position,type,depth}]}`
+
+#### FUNC-086: `extract_alignment_from_drawing(drawing)`
+- **模块**: 15-drawing-to-quantity.md §15.9
+- **意图**: drawing_to_quantity
+- **参数**: `drawing` (dict)
+- **返回**: `dict` — `{horizontal[{position,label}], vertical[], stations[]}`
+- **说明**: 从公路图纸中提取路线交点(JD)信息
+
+#### FUNC-087: `extract_cross_sections(drawing)`
+- **模块**: 15-drawing-to-quantity.md §15.9
+- **意图**: drawing_to_quantity
+- **参数**: `drawing` (dict)
+- **返回**: `list[dict]` — `[{outline,area}]`
+
+#### FUNC-088: `extract_curtain_wall_elements(drawing)`
+- **模块**: 15-drawing-to-quantity.md §15.9
+- **意图**: drawing_to_quantity
+- **参数**: `drawing` (dict)
+- **返回**: `list[dict]` — `[{outline,area,perimeter,type}]`
+
+#### FUNC-089: `extract_steel_elements(drawing)`
+- **模块**: 15-drawing-to-quantity.md §15.9
+- **意图**: drawing_to_quantity
+- **参数**: `drawing` (dict)
+- **返回**: `list[dict]` — `[{section,position,type}]`
+- **说明**: 解析H型钢(H400x200x8x12)/工字钢(I25a)/槽钢([20a)标注
+
+---
+
+### 14.12 函数快速索引
 
 | 意图 | 函数数 | 函数列表 |
 |------|:---:|---------|
@@ -632,6 +738,7 @@ result = check_scaffold_stability(height=50, step=1.8, span=1.5)
 | excel | 6 | FUNC-062~067 |
 | utilities | 5 | FUNC-068~072 |
 | workflows | 3 | FUNC-073~075 |
-| **合计** | **75** | |
+| drawing_to_quantity | 14 | FUNC-076~089 |
+| **合计** | **89** | |
 
 ---
