@@ -125,6 +125,25 @@ AI 收到用户消息后，按以下矩阵匹配意图。匹配优先级：**精
 | 导出Excel、导出清单 | export excel | `export_quantity_to_excel()` |
 | 批量处理、批量算量 | batch process | `batch_process_cad()` |
 
+#### 意图-10: 图纸智能分析与自动算量 (`drawing_to_quantity`)
+
+| 关键字 (中文) | 关键字 (英文) | 触发函数 |
+|--------------|-------------|---------|
+| 根据图纸算量、图纸分析、自动算量 | auto quantity from drawing | `auto_quantity_from_drawing()` |
+| 识别构件、提取构件、图纸识别 | extract elements, recognize | `extract_elements_from_drawing()` |
+| 提取尺寸、标注提取、尺寸标注 | extract dimensions | `extract_dimensions_from_drawing()` |
+| 提取钢筋、钢筋标注、钢筋信息 | extract rebar info | `extract_rebar_info()` |
+| 图层分类、图层识别 | classify layers | `classify_layers()` |
+| 多层算量、楼层汇总 | multi floor quantities | `assemble_multi_floor_quantities()` |
+| 算量校核、结果校核、量复核 | audit quantity | `audit_quantity_result()` |
+| 图纸算量报告、算量报告 | drawing quantity report | `generate_drawing_quantity_report()` |
+| 按专业算量、专业图纸 | quantity by discipline | `auto_quantity_by_discipline()` |
+| 柱编号、梁编号、KZ、KL | column label, beam label | `_parse_column_label()` / `_parse_beam_label()` |
+| 板厚提取、h=120 | slab thickness | `_parse_slab_thickness()` |
+| 门窗标注、M-1、C-1 | opening label | `_parse_opening_label()` |
+| 钢筋标注、Φ10@200、C16@150 | rebar text | `_parse_rebar_text()` |
+| 轴线编号、轴网、轴线 | axis grid, axis label | `extract_dimensions_from_drawing()` |
+
 ---
 
 ### 8.2 专业领域路由表
