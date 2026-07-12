@@ -42,6 +42,7 @@ MODULES = [
     "12-schedule.md",   # 施工组织与进度
     "13-excel.md",      # Excel计算表生成器
     "14-api-registry.md", # 函数注册表 (API Registry)
+    "15-drawing-to-quantity.md", # 图纸智能分析与自动算量
 ]
 
 
